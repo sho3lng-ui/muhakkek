@@ -5,31 +5,30 @@ import os
 import numpy as np
 from numpy import dot
 from numpy.linalg import norm
-import google.generativeai as genai
+from bs4 import BeautifulSoup
+from groq import Groq
 from sentence_transformers import SentenceTransformer
 
-# جلب المفاتيح من بيئة التشغيل
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+# جلب المفاتيح من بيئة التشغيل (Secrets)
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 SERPER_API_KEY = os.environ.get('SERPER_API_KEY')
 
 # تهيئة وتحميل النماذج لمرة واحدة وحفظها في الكاش لسرعة الأداء
 @st.cache_resource
 def load_models():
-    if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-        # التعديل هنا: إضافة بادئة /models لحل مشكلة الـ 404
-        gemini_model = genai.GenerativeModel('models/gemini-2.5-flash')
+    if GROQ_API_KEY:
+        groq_client = Groq(api_key=GROQ_API_KEY)
     else:
-        gemini_model = None
+        groq_client = None
     embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-    return gemini_model, embed_model
+    return groq_client, embed_model
 
-gemini_model, embed_model = load_models()
+groq_client, embed_model = load_models()
 
 def cosine_similarity(a, b):
     return dot(a, b) / (norm(a) * norm(b) + 1e-8)
 
-def filter_top_snippets(fact, snippets, top_k=10):
+def filter_top_snippets(fact, snippets, top_k=3):
     if not embed_model or not snippets:
         return snippets[:top_k]
     
@@ -42,7 +41,7 @@ def filter_top_snippets(fact, snippets, top_k=10):
 
     return sorted(snippets, key=lambda x: x['confidence'], reverse=True)[:top_k]
 
-def search_trusted_sources_serper(fact, api_key, num_results=10, recent_year=2020):
+def search_trusted_sources_serper(fact, api_key, num_results=5, recent_year=2020):
     if not api_key:
         st.error("خطأ: مفتاح SERPER_API_KEY غير متوفر.")
         return []
@@ -78,13 +77,42 @@ def search_trusted_sources_serper(fact, api_key, num_results=10, recent_year=202
         st.error(f"خطأ أثناء جلب البيانات من Serper: {e}")
         return []
 
-def evaluate_fact_gemini(fact, top_snippets):
-    if not gemini_model:
-        return "خطأ: نموذج Gemini غير مهيأ، تحقق من الرمز الخاص بك."
+def scrape_full_content(target_url):
+    """
+    دالة آمنة ومستقرة لبيئة Streamlit لكشط وتنظيف محتوى الرابط بالكامل
+    """
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    try:
+        response = requests.get(target_url, headers=headers, timeout=8)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # استخراج نصوص الفقرات والعناوين فقط لتخطي الـ Javascript والإعلانات والمناطق الميتة في الموقع
+        text_elements = soup.find_all(['p', 'h1', 'h2', 'h3'])
+        full_text = " ".join([txt.get_text().strip() for txt in text_elements if txt.get_text().strip()])
+        
+        # قص النص حتى لا يتعدى سعة النموذج وسياق الـ API
+        return full_text[:3500]
+    except:
+        return ""
+
+def evaluate_fact_with_ai(fact, top_snippets):
+    if not groq_client:
+        return "خطأ: نموذج Groq غير مهيأ، تحقق من إضافة مفتاح GROQ_API_KEY بنجاح."
     if not top_snippets:
         return "لا توجد معلومات كافية لتقييم المعلومة."
 
-    context = "\n".join([f"- {s['text']}" for s in top_snippets])
+    # كشط المحتويات الكاملة لأفضل المصادر التي تمت تصفيتها
+    scraped_contexts = []
+    for index, s in enumerate(top_snippets):
+        with st.spinner(f"جاري قراءة وتحليل المصدر رقم {index+1} بالكامل..."):
+            full_body = scrape_full_content(s['source'])
+            # إذا فشل الكشط الكامل نعتمد على الـ snippet كخطة بديلة
+            content_to_use = full_body if full_body else s['text']
+            scraped_contexts.append(f"[المصدر: {s['source']}]\nالمحتوى المتوفر: {content_to_use}")
+
+    context = "\n\n---\n\n".join(scraped_contexts)
+    
     prompt = f"""
 أنت مساعد خبير، محايد، وصارم جداً مخصص للتحقق من الحقائق بمختلف اللغات (Fact-Checker).
 
@@ -112,29 +140,39 @@ def evaluate_fact_gemini(fact, top_snippets):
   * أسلوب الفحص: الرجوع إلى موقع وزارة الخارجية المعنية، وكالات الأنباء الرسمية، والمصادر عالية المصداقية للتحقق من هوية المسؤول الحالي في نفس وقت الفحص، دون تعديل النص تلقائياً من عندك قبل التثبت.
 
 ---
-    
-    المعلومة: "{fact}"
-    المصادر:
-    {context}
 
-    أجب بدقة وبصياغة مختصرة جداً تبدأ بـ: "صحيح"، "جزئيًا صحيح"، أو "خاطئ"، ثم اذكر السبب المباشر في جملة واحدة إضافية.
-    """
-    response = gemini_model.generate_content(prompt)
-    return response.text.strip()
+المعلومة المراد فحصها الآن:
+"{fact}"
+
+المصادر المستخرجة من الويب للفحص بناءً عليها بالكامل:
+{context}
+
+قم بالتحقق الآن وصغ الحكم والسبب بناءً على القواعد والأمثلة السابقة:
+"""
+    try:
+        # استخدام نموذج Llama 3.2 فائق السرعة والخفيف عبر جروك
+        response = groq_client.chat.completions.create(
+            model="llama-3.2-3b-preview",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"حدث خطأ أثناء استدعاء نموذج جروك: {e}"
 
 # --- واجهة مستخدم Streamlit ---
 st.set_page_config(page_title="مُحقق الحقائق الذكي", layout="centered")
-st.header("🔍 نظام التأكد من الحقائق الذكي ")
+st.header("🔍 نظام التأكد من الحقائق الذكي (النسخة المتقدمة)")
 
 fact_to_check = st.text_area("أدخل المعلومة المراد فحصها:", "السرطان يقوي عظام المريض")
 
 if st.button("بدء فحص الحقيقة"):
-    if not GEMINI_API_KEY or not SERPER_API_KEY:
-        st.error("المفاتيح البرمجية ناقصة. تأكد من إضافتها في قسم Secrets بكولاب وإعادة تشغيل التطبيق.")
+    if not GROQ_API_KEY or not SERPER_API_KEY:
+        st.error("المفاتيح البرمجية ناقصة. تأكد من إضافة GROQ_API_KEY و SERPER_API_KEY في قسم Secrets وإعادة تشغيل التطبيق.")
     elif fact_to_check.strip() == "":
         st.warning("الرجاء كتابة نص أو معلومة أولاً للفحص.")
     else:
-        with st.spinner("جاري البحث عبر الويب وتصفية النتائج الذكية..."):
+        with st.spinner("جاري البحث عبر الويب وتجميع الروابط الحية..."):
             snippets = search_trusted_sources_serper(fact_to_check, SERPER_API_KEY)
             
             if not snippets:
@@ -142,13 +180,13 @@ if st.button("بدء فحص الحقيقة"):
             else:
                 top_snippets = filter_top_snippets(fact_to_check, snippets, top_k=3)
                 
-                st.subheader("📌 أهم المصادر والمقتبسات المستند إليها:")
+                st.subheader("📌 أهم المصادر الحية التي سيتم قراءتها بالكامل:")
                 for s in top_snippets:
                     date_str = s['date'].strftime("%Y-%m-%d") if s['date'] else "تاريخ غير معلوم"
-                    st.markdown(f"- [{s['source']}]({s['source']}): {s['text']} *({date_str})*")
+                    st.markdown(f"- [{s['source']}]({s['source']}) *({date_str})*")
                 
-                with st.spinner("جاري صياغة التقييم النهائي بواسطة الذكاء الاصطناعي..."):
-                    evaluation_result = evaluate_fact_gemini(fact_to_check, top_snippets)
+                with st.spinner("جاري كشط محتوى المواقع وصياغة التقييم النهائي عبر الذكاء الاصطناعي..."):
+                    evaluation_result = evaluate_fact_with_ai(fact_to_check, top_snippets)
                     
                     st.subheader("⚖️ حكم منصة التحقق:")
                     if "صحيح" in evaluation_result and "جزئي" not in evaluation_result:
