@@ -159,7 +159,7 @@ def evaluate_fact_with_ai(fact, top_snippets):
 
 # --- واجهة مستخدم Streamlit ---
 st.set_page_config(page_title="مُحقق الحقائق الذكي", layout="centered")
-st.header("🔍 نظام التأكد من الحقائق الذكي (النسخة المتقدمة)")
+st.header("🔍 نظام التأكد من الحقائق الذكي (نسخة تجريبية)")
 
 fact_to_check = st.text_area("أدخل المعلومة المراد فحصها:", "السرطان يقوي عظام المريض")
 
