@@ -1,5 +1,6 @@
 streamlit
 requests
-sentence-transformers
-google-generativeai
 numpy
+sentence-transformers
+beautifulsoup4
+groq
