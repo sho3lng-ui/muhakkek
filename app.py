@@ -29,7 +29,7 @@ gemini_model, embed_model = load_models()
 def cosine_similarity(a, b):
     return dot(a, b) / (norm(a) * norm(b) + 1e-8)
 
-def filter_top_snippets(fact, snippets, top_k=3):
+def filter_top_snippets(fact, snippets, top_k=10):
     if not embed_model or not snippets:
         return snippets[:top_k]
     
