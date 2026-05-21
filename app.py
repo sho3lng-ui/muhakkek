@@ -123,7 +123,7 @@ if st.button("بدء فحص الحقيقة"):
                     date_str = s['date'].strftime("%Y-%m-%d") if s['date'] else "تاريخ غير معلوم"
                     st.markdown(f"- [{s['source']}]({s['source']}): {s['text']} *({date_str})*")
                 
-                with st.spinner("جاري صياغة التقييم النهائي بواسطة Gemini..."):
+                with st.spinner("جاري صياغة التقييم النهائي بواسطة الذكاء الاصطناعي..."):
                     evaluation_result = evaluate_fact_gemini(fact_to_check, top_snippets)
                     
                     st.subheader("⚖️ حكم منصة التحقق:")
