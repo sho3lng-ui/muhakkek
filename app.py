@@ -124,7 +124,7 @@ def evaluate_fact_gemini(fact, top_snippets):
 
 # --- واجهة مستخدم Streamlit ---
 st.set_page_config(page_title="مُحقق الحقائق الذكي", layout="centered")
-st.header("🔍 نظام التحقق من الحقائق الذكي ")
+st.header("🔍 نظام التأكد من الحقائق الذكي ")
 
 fact_to_check = st.text_area("أدخل المعلومة المراد فحصها:", "السرطان يقوي عظام المريض")
 
