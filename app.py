@@ -152,7 +152,7 @@ def evaluate_fact_with_ai(fact, top_snippets):
     try:
         # التحديث هنا: تم الانتقال إلى الوحش الآسيوي المتفوق في اللغة العربية Qwen 2.5 بدلاً من الموديل الموقوف
         response = groq_client.chat.completions.create(
-            model="qwen-2.5-7b-instruct",
+            model="llama-3.3-70b-specdec",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
