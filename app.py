@@ -71,7 +71,8 @@ TRUSTED_DOMAINS = [
     "bbc.com", "reuters.com", "cnn.com", "skynewsarabia.com", 
     "aljazeera.net", "france24.com", "asharq.com", "alarabiya.net",
     "dw.com", "un.org", "who.int", "reutersagency.com", "skynewsarabia.com", "youm7.com", "alarabiya.net", 
-    "mena.org.eg", "www.wam.ae", "spa.gov.sa", "elwatannews.com", "dostor.org", "cairo24.com", "alqaheranews.net", "almasryalyoum.com", "shorouknews.com", "", 
+    "mena.org.eg", "www.wam.ae", "spa.gov.sa", "elwatannews.com", "dostor.org", "cairo24.com",
+    "alqaheranews.net", "almasryalyoum.com", "shorouknews.com", "qna.org.qa", 
 ]
 
 # --- تهيئة المكونات وقاعدة البيانات في الكاش لسرعة الأداء ---
@@ -246,7 +247,7 @@ def display_share_buttons(fact, final_answer):
         st.markdown(f'<a href="{twitter_url}" target="_blank"><button style="background-color:#1DA1F2;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;font-weight:bold;">🔵 إكس</button></a>', unsafe_allow_html=True)
 
 # --- واجهة مستخدم Streamlit الرئيسية ---
-st.set_page_config(page_title="المُحقق الذكي", layout="centered")
+st.set_page_config(page_title="(إصدار تجريبي) المُحقق الذكي", layout="centered")
 # 🔥 تفعيل التصميم العربي المندمج فوراً عند فتح التطبيق
 apply_arabic_rtl()
 st.header("🛡️ المُحقق الذكي")
