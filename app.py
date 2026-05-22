@@ -13,7 +13,13 @@ from numpy.linalg import norm
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 SERPER_API_KEY = os.environ.get('SERPER_API_KEY')
 
-# تهيئة وتحميل النماذج لمرة واحدة وحفظها في الكاش لسرعة الأداء
+# --- قائمة المصادر الموثوقة ذات الأولوية العالية (Tier 2) ---
+TRUSTED_DOMAINS = [
+    "bbc.com", "reuters.com", "cnn.com", "skynewsarabia.com", 
+    "aljazeera.net", "france24.com", "asharq.com", "alarabiya.net",
+    "dw.com", "un.org", "who.int", "reutersagency.com"
+]
+
 @st.cache_resource
 def load_models():
     if GROQ_API_KEY:
@@ -28,7 +34,11 @@ groq_client, embed_model = load_models()
 def cosine_similarity(a, b):
     return dot(a, b) / (norm(a) * norm(b) + 1e-8)
 
-def filter_top_snippets(fact, snippets, top_k=3):
+def filter_and_rank_sources(fact, snippets, top_k=4):
+    """
+    دالة متطورة لترتيب المصادر: تجمع بين الشبه الدلالي (Semantic Embedding)
+    وبين معاقبة وخفض ترتيب شبكات التواصل الاجتماعي لرفع مصداقية المواقع الرسمية.
+    """
     if not embed_model or not snippets:
         return snippets[:top_k]
     
@@ -36,8 +46,17 @@ def filter_top_snippets(fact, snippets, top_k=3):
     fact_vector = embed_model.encode([fact])[0]
 
     for i, snippet in enumerate(snippets):
-        conf = float(cosine_similarity(fact_vector, vectors[i]))
-        snippets[i]['confidence'] = conf
+        base_conf = float(cosine_similarity(fact_vector, vectors[i]))
+        source_url = snippet['source'].lower()
+        
+        # عقوبة جزائية لمنصات التواصل الاجتماعي لخفض ترتيبها تلقائياً
+        if any(social in source_url for social in ["facebook.com", "fb.com", "twitter.com", "x.com", "tiktok.com", "instagram.com"]):
+            base_conf -= 0.25  # خفض الأولوية بشكل حاد
+        # مكافأة تشجيعية للمصادر الموثوقة المحددة مسبقاً
+        elif any(trusted in source_url for trusted in TRUSTED_DOMAINS):
+            base_conf += 0.15  # رفع الأولوية
+            
+        snippets[i]['confidence'] = base_conf
 
     return sorted(snippets, key=lambda x: x['confidence'], reverse=True)[:top_k]
 
@@ -93,7 +112,6 @@ def get_current_live_date():
     return f"{now.day} {months_ar[now.month]} {now.year}"
 
 def get_active_model():
-    """جلب نموذج مستقر من جروك ديناميكياً لتجنب الـ 404"""
     try:
         available_models = [m.id for m in groq_client.models.list().data]
         for preferred in ["qwen", "llama-3.3", "llama3-70b"]:
@@ -105,20 +123,17 @@ def get_active_model():
         return None
 
 def extract_source_entity(fact):
-    """
-    دالة ذكاء اصطناعي في الخلفية تستخرج اسم المنظمة أو الموقع وتتوقع الدومين الخاص به
-    """
     model = get_active_model()
     if not model or not groq_client:
         return None, None
         
     prompt = f"""
-    حلل النص التالي واستخرج منه أي إشارة لصحيفة، موقع إخباري، منظمة، أو جهة رسمية نُسب إليها الكلام (مثال: منظمة الصحة العالمية، اليوم السابع، الفاو، نيويورك تايمز).
-    أعد الإجابة بصيغة JSON فقط كالتالي دون أي نص إضافي قبل أو بعد الـ JSON:
+    حلل النص واستخرج منه أي إشارة لصحيفة، موقع، منظمة، أو جهة نُسب إليها الكلام (مثل: منظمة الصحة العالمية، اليوم السابع، bbc، رويترز).
+    أعد الإجابة بصيغة JSON فقط كالتالي دون أي نص إضافي:
     {{
       "has_entity": true أو false,
       "entity_name": "اسم الجهة المستخرجة بالعربية",
-      "expected_domain": "الدومين التقريبي للموقع مثل who.int أو youm7.com أو un.org"
+      "expected_domain": "الدومين التقريبي للموقع مثل who.int أو bbc.com أو reuters.com"
     }}
     
     النص: "{fact}"
@@ -130,7 +145,6 @@ def extract_source_entity(fact):
             temperature=0.0
         )
         res_text = response.choices[0].message.content.strip()
-        # تنظيف الجيسون لو احتوى على علامات برمجية
         res_text = res_text.replace("```json", "").replace("```", "").strip()
         data = json.loads(res_text)
         if data.get("has_entity"):
@@ -148,47 +162,50 @@ def parse_ai_response(full_text):
         return parts[0].strip(), parts[1].strip()
     return None, full_text
 
-def evaluate_fact_with_ai(fact, general_snippets, entity_snippets, entity_name):
+def build_trusted_query(fact):
+    """بناء استعلام مخصص للبحث حصراً داخل المواقع ذات الثقة العالية (Tier 2)"""
+    sites_query = " OR ".join([f"site:{domain}" for domain in TRUSTED_DOMAINS[:6]]) # دمج أول 6 نطاقات كبار لعدم تجاوز طول الاستعلام
+    return f"({sites_query}) {fact}"
+
+def evaluate_fact_with_multi_tier(fact, tier1_sources, tier2_sources, tier3_sources, entity_name):
     model = get_active_model()
     if not model:
         return "خطأ: لم يتم العثور على نماذج نشطة في حساب جروك."
 
-    # 1. تجميع المحتوى العام
-    scraped_contexts = []
-    for s in general_snippets:
-        full_body = scrape_full_content(s['source'])
-        scraped_contexts.append(f"[مصدر عام: {s['source']}]\nالمحتوى: {full_body if full_body else s['text']}")
+    # دالة فرعية لتجميع وتجهيز نصوص الكشط بشكل منظم للنموذج
+    def compile_context(sources, label):
+        compiled = []
+        for s in sources:
+            body = scrape_full_content(s['source'])
+            compiled.append(f"[{label}: {s['source']}]\nالمحتوى: {body if body else s['text']}")
+        return "\n\n---\n\n".join(compiled) if compiled else "لا تتوفر مستندات كافية في هذا المستوى."
 
-    # 2. تجميع محتوى المنظمة الخاصة (إن وجدت)
-    entity_contexts = []
-    if entity_name and entity_snippets:
-        for s in entity_snippets:
-            full_body = scrape_full_content(s['source'])
-            entity_contexts.append(f"[منشور رسمي داخل موقع {entity_name}: {s['source']}]\nالمحتوى: {full_body if full_body else s['text']}")
-
-    context_general = "\n\n---\n\n".join(scraped_contexts)
-    context_entity = "\n\n---\n\n".join(entity_contexts) if entity_contexts else "لم يتم العثور على نتائج داخل الموقع الرسمي لهذه الجهة."
+    context_tier1 = compile_context(tier1_sources, f"مستند من المصدر المنسوب إليه مباشرة ({entity_name})")
+    context_tier2 = compile_context(tier2_sources, "وثيقة من منصة إعلامية ذات مصداقية عالية (BBC, Reuters, etc.)")
+    context_tier3 = compile_context(tier3_sources, "منشور أو تغطية من الويب العام")
 
     live_date = get_current_live_date()
     
     prompt = f"""
-أنت خبير فحص حقائق صحفي محترف (Fact-Checking Agent).
-🛑 [سياق زمني حرج]: تاريخ اليوم هو: {live_date}. محاكمة التواريخ تتم بناءً على هذا اليوم الحالي.
+أنت رئيس تحرير ومحقق صحفي خبير في كشف الزيف (Lead Fact-Checking Auditor).
+🛑 [سياق زمني]: تاريخ اليوم الحالي هو: {live_date}. 
 
-الادعاء المراد فحصها الآن: "{fact}"
+الادعاء المطلوب فصحه ومحاكمته: "{fact}"
 
-المنظمة/الجهة المعنية بالتحقق المباشر (إن وجدت): {entity_name if entity_name else 'لا يوجد جهة محددة مسبقاً'}
+لقد قمنا بجمع الأدلة لك بناءً على 3 مستويات صارمة من الثقة، وعليك الموازنة بينها (تذكر: وثيقة رسمية من رويترز أو موقع المنظمة تلغي وتكذب أي منشور على فيسبوك أو مدونة شخصية مجهولة):
 
-🔍 [أولاً: البيانات المستخرجة حصرياً من داخل موقع الجهة المنسوب إليها الكلام]:
-{context_entity}
+📂 [الأدلة من المستوى الأول - المصدر المذكور في الادعاء مباشرة]:
+{context_tier1}
 
-🌐 [ثانياً: البيانات العامة من محركات البحث والوكالات الأخرى]:
-{context_general}
+📂 [الأدلة من المستوى الثاني - وكالات الأنباء العالمية الموثوقة المحددة مسبقاً]:
+{context_tier2}
 
-⚙️ المنهجية المطلوبة:
-1. فكك الادعاء.
-2. إذا كان الادعاء ينسب كلاماً لجهة معينة (مثل "أعلنت منظمة كذا")، فتحقق أولاً: هل تؤكد وثائق هذه الجهة المرفقة أعلاه هذا الإعلان؟ وإذا لم تجده في موقعهم، وضح للمستخدم: "لا يوجد أثر لهذا البيان في المنصات الرسمية لـ [اسم الجهة]".
-3. صغ الحكم بـ "صحيح"، "جزئيًا صحيح"، أو "خاطئ" مع ذكر السبب والبديل الحقيقي من التواريخ الحية الحالية.
+📂 [الأدلة من المستوى الثالث - الويب العام وشبكات التواصل]:
+{context_tier3}
+
+⚙️ قواعد المحاكمة وإصدار الحكم:
+1. حلل التناقضات: إذا وجد إعلان منتشر بالويب العام (المستوى 3) ولكن أرشيف الوكالات الموثوقة (المستوى 2) والمصدر نفسه (المستوى 1) يخلو تماماً منه أو ينفيه، فاحكم فوراً بأنه "خاطئ" ووضح للمستخدم الثغرة.
+2. ابدأ بكلمة: "صحيح"، "جزئيًا صحيح"، أو "خاطئ"، متبوعاً بالتفكيك والبديل الفعلي لعام {datetime.now().year}.
 """
 
     try:
@@ -202,65 +219,67 @@ def evaluate_fact_with_ai(fact, general_snippets, entity_snippets, entity_name):
         return f"حدث خطأ أثناء استدعاء نموذج جروك: {e}"
 
 # --- واجهة مستخدم Streamlit ---
-st.set_page_config(page_title="مُحقق الحقائق الذكي المطور", layout="centered")
-st.header("🔍 نظام التأكد من الحقائق الذكي (الإصدار الصحفي المحترف)")
+st.set_page_config(page_title="مُحقق الحقائق الذكي السيادي", layout="centered")
+st.header("🛡️ نظام التأكد من الحقائق الذكي (نظام مستويات الثقة الثلاثة)")
 st.caption(f"📅 تاريخ النظام اللحظي: {get_current_live_date()}")
 
-fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه بدقة:", "أعلنت منظمة الصحة العالمية عن انتهاء مرض السكري في 2026")
+fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه ومحاكمته برمتها:", "قالت وكالة رويترز إن السيرفرات العالمية ستتوقف بالكامل غداً")
 
-if st.button("بدء فحص وتفكيك الحقيقة"):
+if st.button("بدء الفحص الجنائي الرقمي"):
     if not GROQ_API_KEY or not SERPER_API_KEY:
         st.error("المفاتيح البرمجية ناقصة في إعدادات Secrets.")
     elif fact_to_check.strip() == "":
         st.warning("الرجاء كتابة نص أولاً.")
     else:
-        # 1. التقصي التلقائي عن وجود جهة أو منظمة منسوب إليها الخبر
-        with st.spinner("جاري تحليل النص للكشف عن الجهات المنسوب إليها..."):
+        current_year = datetime.now().year
+        
+        tier1_sources = []
+        tier2_sources = []
+        tier3_sources = []
+        
+        # 1. تشغيل المستوى الأول (التقصي عن الجهة المذكورة)
+        with st.spinner("🕵️ الطبقة 1: فحص الادعاء واستخراج الجهة المنسوب إليها..."):
             entity_name, expected_domain = extract_source_entity(fact_to_check)
-            
-        # 2. بدء عمليات البحث المتوازي والمخصص
-        with st.spinner("جاري كشط الويب وتجميع الأدلة والمقالات الكاملة..."):
-            # أ. البحث العام في الويب
-            current_year = datetime.now().year
-            general_snippets = search_trusted_sources_serper(f"{fact_to_check} {current_year}", SERPER_API_KEY, num_results=4)
-            
-            # ب. البحث المخصص والضيق داخل موقع المنظمة الفعلي (لو وُجدت)
-            entity_snippets = []
             if entity_name and expected_domain:
-                st.toast(f"تم رصد نسبة الكلام لـ {entity_name}، جاري فحص أرشيف موقع {expected_domain}...", icon="🏢")
-                specific_query = f"site:{expected_domain} {fact_to_check}"
-                entity_snippets = search_trusted_sources_serper(specific_query, SERPER_API_KEY, num_results=3)
+                st.toast(f"تم رصد الكيان: {entity_name}، جاري فحص أرشيفه المباشر...", icon="🏢")
+                tier1_sources = search_trusted_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
 
-        if not general_snippets and not entity_snippets:
-            st.warning("لم نتمكن من العثور على مصادر ويب حية متعلقة بهذا السياق حالياً.")
+        # 2. تشغيل المستوى الثاني (البحث في Whitelist الوكالات الكبرى الموثوقة)
+        with st.spinner("🛡️ الطبقة 2: التفتيش المتوازي في وكالات الأنباء العالمية الموثوقة..."):
+            trusted_query = build_trusted_query(fact_to_check)
+            tier2_sources = search_trusted_sources_serper(trusted_query, SERPER_API_KEY, num_results=3)
+
+        # 3. تشغيل المستوى الثالث (البحث المفتوح بالويب العام)
+        with st.spinner("🌐 الطبقة 3: تجميع البيانات المفتوحة ومعاقبة مصادر التواصل الاجتماعي..."):
+            raw_tier3 = search_trusted_sources_serper(f"{fact_to_check} {current_year}", SERPER_API_KEY, num_results=5)
+            # استخدام الفلتر والترتيب الذكي لخفض رتبة الفيسبوك وإكس وتفضيل المقالات الرسمية
+            tier3_sources = filter_and_rank_sources(fact_to_check, raw_tier3, top_k=3)
+
+        # التأكد من وجود أي داتا قبل المضي قدماً
+        if not tier1_sources and not tier2_sources and not tier3_sources:
+            st.warning("لم نتمكن من جلب أدلة ويب حية كافية لمطابقة هذا النص.")
         else:
-            # تصفية وتحديد أفضل المصادر العامة
-            top_general = filter_top_snippets(fact_to_check, general_snippets, top_k=3)
+            # عرض هيكل وشجرة المصادر المكتشفة بشفافية للمستخدم في الواجهة
+            st.subheader("📊 شجرة المصادر والأدلة التي تم جمعها ومحاكمتها:")
             
-            # عرض المصادر الذكية المكتشفة في الواجهة
-            st.subheader("📌 المصادر والروابط الحية المكتشفة:")
-            if entity_name and entity_snippets:
-                st.markdown(f"**🔗 وثائق من داخل موقع ({entity_name}) الرسمي:**")
-                for s in entity_snippets[:2]:
-                    st.markdown(f"- [{s['source']}]({s['source']}) *(محتوى مخصص وموجه)*")
-                    
-            st.markdown("**🌐 مقالات وتغطيات صحفية عامة:**")
-            for s in top_general:
-                date_str = s['date'].strftime("%Y-%m-%d") if s['date'] else "تاريخ غير معلوم"
-                st.markdown(f"- [{s['source']}]({s['source']}) *({date_str})*")
-            
-            # 3. صياغة وتقييم النتيجة بواسطة العميل الذكي
-            with st.spinner("يقوم المحقق الآلي بمحاكمة البيانات ومطابقتها بأرشيف المنظمات..."):
-                evaluation_result = evaluate_fact_with_ai(fact_to_check, top_general, entity_snippets, entity_name)
+            if entity_name:
+                st.markdown(f"**🏢 المستوى 1 ({entity_name}):** {f'تم العثور على {len(tier1_sources)} مستندات داخل موقعهم' if tier1_sources else 'لم ينشروا هذا النص إطلاقاً بصفحتهم الرسمية'}")
                 
-                # فصل التفكير عن النتيجة المعروضة
+            st.markdown(f"**🛡️ المستوى 2 (الوكالات الموثوقة الكبرى):** تم تأمين {len(tier2_sources)} روابط موثقة من (BBC, Reuters...)")
+            st.markdown(f"**🌐 المستوى 3 (الويب العام):** تم رصد وتصفية {len(tier3_sources)} مقالات مع موازنة الأوزان.")
+            
+            # 4. صياغة وتقييم النتيجة النهائية عبر المحقق الآلي
+            with st.spinner("⚖️ يقوم رئيس التحرير الآلي الآن بموازنة قوة الأدلة وإصدار الحكم..."):
+                evaluation_result = evaluate_fact_with_multi_tier(fact_to_check, tier1_sources, tier2_sources, tier3_sources, entity_name)
+                
+                # فصل التفكير وعرض النتيجة بشكل رصين
                 thinking, final_answer = parse_ai_response(evaluation_result)
                 
                 if thinking:
-                    with st.expander("🧠 رؤية مسار خطة المحقق وتقييم النسبة للمصدر الداخلي:"):
+                    with st.expander("🧠 مذكرات التفكير والتحليل الداخلي لرئيس التحرير (Chain of Thought):"):
                         st.write(thinking)
                 
-                st.subheader("⚖️ حكم منصة التحقق:")
+                st.subheader("⚖️ حكم منصة التحقق النهائي:")
                 if "صحيح" in final_answer and "جزئي" not in final_answer:
                     st.success(final_answer)
                 elif "جزئي" in final_answer:
