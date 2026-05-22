@@ -79,7 +79,7 @@ def search_trusted_sources_serper(fact, api_key, num_results=5, recent_year=2020
 
 def scrape_full_content(target_url):
     """
-    دالة آمنة ومستقرة لبيئة Streamlit لكشط وتنظيف محتوى الرابط بالكامل
+    دالة آمنة ومستقرة جدا لبيئة Streamlit لكشط وتنظيف محتوى الرابط بالكامل
     """
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
