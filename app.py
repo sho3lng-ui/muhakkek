@@ -114,7 +114,7 @@ def get_current_live_date():
 def get_active_model():
     try:
         available_models = [m.id for m in groq_client.models.list().data]
-        for preferred in ["qwen", "llama-3.3", "llama3-70b"]:
+        for preferred in ["groq/compound", "qwen", "llama-3.3", "llama3-70b"]:
             match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
             if match:
                 return match
