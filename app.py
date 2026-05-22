@@ -246,7 +246,7 @@ def display_share_buttons(fact, final_answer):
 
 # --- واجهة مستخدم Streamlit ---
 st.set_page_config(page_title="مُحقق الحقائق الذكي السيادي", layout="centered")
-st.header("🛡️ نظام التأكد من الحقائق الذكي (نظام مستويات الثقة الثلاثة000)")
+st.header("🛡️ نظام التأكد من الحقائق الذكي (نظام مستويات الثقة الثلاثة)")
 st.caption(f"📅 تاريخ النظام اللحظي: {get_current_live_date()}")
 
 fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه ومحاكمته برمتها:", "قالت وكالة رويترز إن السيرفرات العالمية ستتوقف بالكامل غداً")
