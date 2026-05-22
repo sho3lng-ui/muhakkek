@@ -214,7 +214,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
         if not tier1_sources and not tier2_sources and not tier3_sources:
             st.warning("لم نتمكن من جلب أدلة حية كافية.")
         else:
-            evaluation_result = evaluate_fact_with_ai(fact_to_check, tier1_sources, tier2_sources, tier3_sources, entity_name)
+            evaluation_result = evaluate_fact_with_multi_tier(fact_to_check, tier1_sources, tier2_sources, tier3_sources, entity_name)
             thinking, final_answer = parse_ai_response(evaluation_result)
             
             if thinking:
