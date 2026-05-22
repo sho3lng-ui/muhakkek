@@ -219,7 +219,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
             raw_tier3 = search_trusted_sources_serper(f"{fact_to_check} {datetime.now().year}", SERPER_API_KEY, num_results=3)
             tier3_sources = filter_and_rank_sources(fact_to_check, raw_tier3, top_k=2)
 
-if not tier1_sources and not tier2_sources and not tier3_sources:
+        if not tier1_sources and not tier2_sources and not tier3_sources:
             st.warning("لم نتمكن من جلب أدلة حية كافية.")
         else:
             evaluation_result = evaluate_fact_with_multi_tier(fact_to_check, tier1_sources, tier2_sources, tier3_sources, entity_name)
