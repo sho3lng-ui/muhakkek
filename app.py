@@ -314,7 +314,3 @@ def display_share_buttons(fact, final_answer):
         st.markdown(f'<a href="{telegram_url}" target="_blank"><button style="background-color:#0088cc;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;">✈️ تليجرام</button></a>', unsafe_allow_html=True)
     with col4:
         st.markdown(f'<a href="{facebook_url}" target="_blank"><button style="background-color:#1877F2;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;">🔵 فيسبوك</button></a>', unsafe_allow_html=True)
-
-# وضع زر لنسخ التقرير النهائي بضغطة زر واحدة
-report_text = f"الادعاء: {fact_to_check}\nالحكم النهائي: {final_answer}"
-st.copy_to_clipboard(report_text, text="📋 نسخ التقرير والحكم كاملاً")
