@@ -128,8 +128,8 @@ def evaluate_fact_with_ai(fact, top_snippets):
         available_models = [m.id for m in groq_client.models.list().data]
         
         # 2. تحديد أولويات الاختيار (نبحث عن الأقوى في العربية والتحليل)
-        selected_model = None
-        for preferred in ["qwen-2.5", "llama-3.3", "llama3-70b", "mixstral"]:
+        selected_model = "qwen/qwen3-32b"
+        for preferred in ["qwen/qwen3-32b", "qwen-2.5", "llama-3.3", "llama3-70b", "mixstral"]:
             # البحث عن موديل يحتوي على هذا الاسم في القائمة الحية
             match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
             if match:
