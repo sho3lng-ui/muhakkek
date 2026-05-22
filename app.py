@@ -114,7 +114,7 @@ def get_current_live_date():
 def get_active_model():
     try:
         available_models = [m.id for m in groq_client.models.list().data]
-        for preferred in ["groq/compound", "qwen", "llama-3.3", "llama3-70b"]:
+        for preferred in ["llama-3.3", "llama3-70b"]:
             match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
             if match:
                 return match
@@ -245,7 +245,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 tier1_sources = search_trusted_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
 
         # 2. تشغيل المستوى الثاني (البحث في Whitelist الوكالات الكبرى الموثوقة)
-        with st.spinner("🛡️ الطبقة 2: التفتيش المتوازي في وكالات الأنباء العالمية الموثوقة..."):
+        with st.spinner("🛡️p الطبقة 2: التفتيش المتوازي في وكالات الأنباء العالمية الموثوقة..."):
             trusted_query = build_trusted_query(fact_to_check)
             tier2_sources = search_trusted_sources_serper(trusted_query, SERPER_API_KEY, num_results=3)
 
