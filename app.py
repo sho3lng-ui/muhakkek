@@ -150,7 +150,7 @@ def evaluate_fact_with_ai(fact, top_snippets):
 قم بالتحقق الآن وصغ الحكم والسبب بناءً على القواعد والأمثلة السابقة:
 """
     try:
-        # التحديث هنا: تم الانتقال إلى الوحش الآسيوي المتفوق في اللغة العربية Qwen 2.5 بدلاً من الموديل الموقوف
+        #  تحميل الموديل وضبط حرارته
         response = groq_client.chat.completions.create(
             model="qwen/qwen3-32b",
             messages=[{"role": "user", "content": prompt}],
@@ -158,15 +158,15 @@ def evaluate_fact_with_ai(fact, top_snippets):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"حدث خطأ أثناء استدعاء نموذج جروك: {e}"
+        return f"حدث خطأ أثناء استدعاء النموذج: {e}"
 
 # --- واجهة مستخدم Streamlit ---
-st.set_page_config(page_title="مُحقق الحقائق الذكي", layout="centered")
+st.set_page_config(page_title="مُدقق الحقائق الذكي", layout="centered")
 st.header("🔍 نظام التأكد من الحقائق الذكي (نسخة تجريبية)")
 
 fact_to_check = st.text_area("أدخل المعلومة المراد فحصها بدقة، ويفضل تحديد المكان مثل البلد أو المحافظة وتحديد الزمان مثل السنة والشهر واليوم لتكون النتائج أفضل:", "يمكن لمريض السكري تناول الحلويات كما يشاء ويتوقف عن تناول الأدوية دون أي مشاكل صحية")
 
-if st.button("بدء فحص الحقيقة"):
+if st.button("بدء فحص المعلومة"):
     if not GROQ_API_KEY or not SERPER_API_KEY:
         st.error("المفاتيح البرمجية ناقصة. تأكد من إضافة GROQ_API_KEY و SERPER_API_KEY في قسم Secrets وإعادة تشغيل التطبيق.")
     elif fact_to_check.strip() == "":
