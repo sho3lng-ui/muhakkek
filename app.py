@@ -2,13 +2,12 @@ import streamlit as st
 import requests
 from datetime import datetime
 import os
-import re
-import numpy as np
-from numpy import dot
-from numpy.linalg import norm
+import json
 from bs4 import BeautifulSoup
 from groq import Groq
 from sentence_transformers import SentenceTransformer
+from numpy import dot
+from numpy.linalg import norm
 
 # جلب المفاتيح من بيئة التشغيل (Secrets)
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
@@ -42,19 +41,13 @@ def filter_top_snippets(fact, snippets, top_k=3):
 
     return sorted(snippets, key=lambda x: x['confidence'], reverse=True)[:top_k]
 
-def search_trusted_sources_serper(fact, api_key, num_results=5):
+def search_trusted_sources_serper(query, api_key, num_results=4):
     if not api_key:
-        st.error("خطأ: مفتاح SERPER_API_KEY غير متوفر.")
         return []
 
     url = "https://google.serper.dev/search"
     headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
-    
-    # تحسين الاستعلام بربطه بالزمن الحالي تلقائياً لضمان جلب أخبار حية محدثة
-    current_year = datetime.now().year
-    enhanced_query = f"{fact} {current_year}"
-    
-    data = {"q": enhanced_query, "num": num_results}
+    data = {"q": query, "num": num_results}
 
     snippets = []
     try:
@@ -76,19 +69,18 @@ def search_trusted_sources_serper(fact, api_key, num_results=5):
             if snippet_text:
                 snippets.append({"text": snippet_text, "source": link, "date": date_obj})
         return snippets
-    except Exception as e:
-        st.error(f"خطأ أثناء جلب البيانات من Serper: {e}")
+    except:
         return []
 
 def scrape_full_content(target_url):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
-        response = requests.get(target_url, headers=headers, timeout=8)
+        response = requests.get(target_url, headers=headers, timeout=6)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         text_elements = soup.find_all(['p', 'h1', 'h2', 'h3'])
         full_text = " ".join([txt.get_text().strip() for txt in text_elements if txt.get_text().strip()])
-        return full_text[:3500]
+        return full_text[:3000]
     except:
         return ""
 
@@ -100,95 +92,121 @@ def get_current_live_date():
     now = datetime.now()
     return f"{now.day} {months_ar[now.month]} {now.year}"
 
+def get_active_model():
+    """جلب نموذج مستقر من جروك ديناميكياً لتجنب الـ 404"""
+    try:
+        available_models = [m.id for m in groq_client.models.list().data]
+        for preferred in ["qwen", "llama-3.3", "llama3-70b"]:
+            match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
+            if match:
+                return match
+        return available_models[0] if available_models else None
+    except:
+        return None
+
+def extract_source_entity(fact):
+    """
+    دالة ذكاء اصطناعي في الخلفية تستخرج اسم المنظمة أو الموقع وتتوقع الدومين الخاص به
+    """
+    model = get_active_model()
+    if not model or not groq_client:
+        return None, None
+        
+    prompt = f"""
+    حلل النص التالي واستخرج منه أي إشارة لصحيفة، موقع إخباري، منظمة، أو جهة رسمية نُسب إليها الكلام (مثال: منظمة الصحة العالمية، اليوم السابع، الفاو، نيويورك تايمز).
+    أعد الإجابة بصيغة JSON فقط كالتالي دون أي نص إضافي قبل أو بعد الـ JSON:
+    {{
+      "has_entity": true أو false,
+      "entity_name": "اسم الجهة المستخرجة بالعربية",
+      "expected_domain": "الدومين التقريبي للموقع مثل who.int أو youm7.com أو un.org"
+    }}
+    
+    النص: "{fact}"
+    """
+    try:
+        response = groq_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0
+        )
+        res_text = response.choices[0].message.content.strip()
+        # تنظيف الجيسون لو احتوى على علامات برمجية
+        res_text = res_text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(res_text)
+        if data.get("has_entity"):
+            return data.get("entity_name"), data.get("expected_domain")
+    except:
+        pass
+    return None, None
+
 def parse_ai_response(full_text):
-    """
-    دالة تقوم بفصل وعزل وسم التفكير الداخلي للنموذج <think> عن الحكم النهائي الموجه للمستخدم
-    """
     if "<think>" in full_text and "</think>" in full_text:
         parts = full_text.split("</think>")
-        thinking_process = parts[0].replace("<think>", "").strip()
-        final_answer = parts[1].strip()
-        return thinking_process, final_answer
+        return parts[0].replace("<think>", "").strip(), parts[1].strip()
     elif "</think>" in full_text:
         parts = full_text.split("</think>")
         return parts[0].strip(), parts[1].strip()
     return None, full_text
 
-def evaluate_fact_with_ai(fact, top_snippets):
-    if not groq_client:
-        return "خطأ: نموذج Groq غير مهيأ، تحقق من إضافة مفتاح GROQ_API_KEY بنجاح."
-    if not top_snippets:
-        return "لا توجد معلومات كافية لتقييم المعلومة."
+def evaluate_fact_with_ai(fact, general_snippets, entity_snippets, entity_name):
+    model = get_active_model()
+    if not model:
+        return "خطأ: لم يتم العثور على نماذج نشطة في حساب جروك."
 
+    # 1. تجميع المحتوى العام
     scraped_contexts = []
-    for index, s in enumerate(top_snippets):
-        with st.spinner(f"جاري قراءة وتحليل المصدر رقم {index+1} بالكامل..."):
-            full_body = scrape_full_content(s['source'])
-            content_to_use = full_body if full_body else s['text']
-            scraped_contexts.append(f"[المصدر: {s['source']}]\nالمحتوى: {content_to_use}")
+    for s in general_snippets:
+        full_body = scrape_full_content(s['source'])
+        scraped_contexts.append(f"[مصدر عام: {s['source']}]\nالمحتوى: {full_body if full_body else s['text']}")
 
-    context = "\n\n---\n\n".join(scraped_contexts)
-    
-    # جلب التاريخ اللحظي الفعلي
+    # 2. تجميع محتوى المنظمة الخاصة (إن وجدت)
+    entity_contexts = []
+    if entity_name and entity_snippets:
+        for s in entity_snippets:
+            full_body = scrape_full_content(s['source'])
+            entity_contexts.append(f"[منشور رسمي داخل موقع {entity_name}: {s['source']}]\nالمحتوى: {full_body if full_body else s['text']}")
+
+    context_general = "\n\n---\n\n".join(scraped_contexts)
+    context_entity = "\n\n---\n\n".join(entity_contexts) if entity_contexts else "لم يتم العثور على نتائج داخل الموقع الرسمي لهذه الجهة."
+
     live_date = get_current_live_date()
     
     prompt = f"""
-أنت محقق صحفي خبير وصارم جداً مخصص للتحقق من الحقائق والأخبار (Fact-Checker Agent).
+أنت خبير فحص حقائق صحفي محترف (Fact-Checking Agent).
+🛑 [سياق زمني حرج]: تاريخ اليوم هو: {live_date}. محاكمة التواريخ تتم بناءً على هذا اليوم الحالي.
 
-🛑 [سياق زمني حرج للغاية]: تاريخ اليوم الحالي هو بالضبط: {live_date}. 
-يجب أن تحاكم وتفحص كل التواريخ المذكورة في المصادر بناءً على هذا التاريخ الصارم (مثال: إذا كنا في عام 2026 والمقال يتحدث عن حدث في 2024، فهذا حدث من الماضي).
+الادعاء المراد فحصها الآن: "{fact}"
 
-⚙️ [منهجية التفكير المطلوبة منك لتفادي الأخطاء]:
-عند فحص الادعاء، يجب أن تتبع الخطوات التالية في عقلك وتفكيرك:
-1. تفكيك الادعاء لعناصره (من، ماذا، ومتى).
-2. إذا تبين لك أن الادعاء "خاطئ"، لا تكتفي بكلمة خاطئ بل قم بـ "التحقيق العكسي": ابحث في المصادر عمن هو صاحب الصفة الحقيقية الحالية في هذا الزمن المذكور.
-3. صياغة الحكم النهائي للمستخدم بوضوح شديد.
+المنظمة/الجهة المعنية بالتحقق المباشر (إن وجدت): {entity_name if entity_name else 'لا يوجد جهة محددة مسبقاً'}
 
-💡 أمثلة لطريقة الصياغة والتفكير المطلوبة:
-- الادعاء: "الأهلي بطلاً للدوري المصري 2026"
-- طريقة ردك: "خاطئ، بناءً على البيانات الرسمية الحالية لعام 2026 فإن بطل الدوري هو [اسم النادي الحقيقي من المصادر]، بينما الأهلي حل في المركز الثاني."
+🔍 [أولاً: البيانات المستخرجة حصرياً من داخل موقع الجهة المنسوب إليها الكلام]:
+{context_entity}
 
----
+🌐 [ثانياً: البيانات العامة من محركات البحث والوكالات الأخرى]:
+{context_general}
 
-الادعاء المراد فحصها الآن:
-"{fact}"
-
-المصادر المستخرجة الحية من الويب:
-{context}
-
-قم بالتحقق الآن وصغ الحكم والسبب بدقة بناءً على القواعد السابقة باللغة العربية:
+⚙️ المنهجية المطلوبة:
+1. فكك الادعاء.
+2. إذا كان الادعاء ينسب كلاماً لجهة معينة (مثل "أعلنت منظمة كذا")، فتحقق أولاً: هل تؤكد وثائق هذه الجهة المرفقة أعلاه هذا الإعلان؟ وإذا لم تجده في موقعهم، وضح للمستخدم: "لا يوجد أثر لهذا البيان في المنصات الرسمية لـ [اسم الجهة]".
+3. صغ الحكم بـ "صحيح"، "جزئيًا صحيح"، أو "خاطئ" مع ذكر السبب والبديل الحقيقي من التواريخ الحية الحالية.
 """
 
     try:
-        # جلب النماذج الحية تلقائياً واختيار الأنسب
-        available_models = [m.id for m in groq_client.models.list().data]
-        selected_model = None
-        for preferred in ["qwen", "llama-3.3", "llama3-70b"]:
-            match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
-            if match:
-                selected_model = match
-                break
-        
-        if not selected_model and available_models:
-            selected_model = available_models[0]
-
         response = groq_client.chat.completions.create(
-            model=selected_model,
+            model=model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1 # درجة منخفضة جداً لضمان الالتزام الصارم بالحقائق والمصادر
+            temperature=0.1
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         return f"حدث خطأ أثناء استدعاء نموذج جروك: {e}"
 
 # --- واجهة مستخدم Streamlit ---
-st.set_page_config(page_title="مُحقق الحقائق الذكي", layout="centered")
-st.header("🔍 نظام التأكد من الحقائق الذكي (إصدار العميل المحقق)")
+st.set_page_config(page_title="مُحقق الحقائق الذكي المطور", layout="centered")
+st.header("🔍 نظام التأكد من الحقائق الذكي (الإصدار الصحفي المحترف)")
+st.caption(f"📅 تاريخ النظام اللحظي: {get_current_live_date()}")
 
-# عرض التاريخ الحالي في الواجهة لإعلام المستخدم
-st.caption(f"📅 تاريخ النظام الحي والمستخدم في الفحص اليوم: {get_current_live_date()}")
-
-fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه بدقة:", "يمكن لمريض السكري تناول الحلويات كما يشاء ويتوقف عن تناول الأدوية دون أن يحدث له أي شيء")
+fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه بدقة:", "أعلنت منظمة الصحة العالمية عن انتهاء مرض السكري في 2026")
 
 if st.button("بدء فحص وتفكيك الحقيقة"):
     if not GROQ_API_KEY or not SERPER_API_KEY:
@@ -196,34 +214,56 @@ if st.button("بدء فحص وتفكيك الحقيقة"):
     elif fact_to_check.strip() == "":
         st.warning("الرجاء كتابة نص أولاً.")
     else:
-        with st.spinner("جاري كشط محرك البحث وقراءة الروابط الحية..."):
-            snippets = search_trusted_sources_serper(fact_to_check, SERPER_API_KEY)
+        # 1. التقصي التلقائي عن وجود جهة أو منظمة منسوب إليها الخبر
+        with st.spinner("جاري تحليل النص للكشف عن الجهات المنسوب إليها..."):
+            entity_name, expected_domain = extract_source_entity(fact_to_check)
             
-            if not snippets:
-                st.warning("لم نتمكن من العثور على مصادر ويب حديثة وموثوقة متعلقة بهذا النص.")
-            else:
-                top_snippets = filter_top_snippets(fact_to_check, snippets, top_k=3)
+        # 2. بدء عمليات البحث المتوازي والمخصص
+        with st.spinner("جاري كشط الويب وتجميع الأدلة والمقالات الكاملة..."):
+            # أ. البحث العام في الويب
+            current_year = datetime.now().year
+            general_snippets = search_trusted_sources_serper(f"{fact_to_check} {current_year}", SERPER_API_KEY, num_results=4)
+            
+            # ب. البحث المخصص والضيق داخل موقع المنظمة الفعلي (لو وُجدت)
+            entity_snippets = []
+            if entity_name and expected_domain:
+                st.toast(f"تم رصد نسبة الكلام لـ {entity_name}، جاري فحص أرشيف موقع {expected_domain}...", icon="🏢")
+                specific_query = f"site:{expected_domain} {fact_to_check}"
+                entity_snippets = search_trusted_sources_serper(specific_query, SERPER_API_KEY, num_results=3)
+
+        if not general_snippets and not entity_snippets:
+            st.warning("لم نتمكن من العثور على مصادر ويب حية متعلقة بهذا السياق حالياً.")
+        else:
+            # تصفية وتحديد أفضل المصادر العامة
+            top_general = filter_top_snippets(fact_to_check, general_snippets, top_k=3)
+            
+            # عرض المصادر الذكية المكتشفة في الواجهة
+            st.subheader("📌 المصادر والروابط الحية المكتشفة:")
+            if entity_name and entity_snippets:
+                st.markdown(f"**🔗 وثائق من داخل موقع ({entity_name}) الرسمي:**")
+                for s in entity_snippets[:2]:
+                    st.markdown(f"- [{s['source']}]({s['source']}) *(محتوى مخصص وموجه)*")
+                    
+            st.markdown("**🌐 مقالات وتغطيات صحفية عامة:**")
+            for s in top_general:
+                date_str = s['date'].strftime("%Y-%m-%d") if s['date'] else "تاريخ غير معلوم"
+                st.markdown(f"- [{s['source']}]({s['source']}) *({date_str})*")
+            
+            # 3. صياغة وتقييم النتيجة بواسطة العميل الذكي
+            with st.spinner("يقوم المحقق الآلي بمحاكمة البيانات ومطابقتها بأرشيف المنظمات..."):
+                evaluation_result = evaluate_fact_with_ai(fact_to_check, top_general, entity_snippets, entity_name)
                 
-                st.subheader("📌 المصادر الحية المعتمد عليها في القراءة الكاملة:")
-                for s in top_snippets:
-                    date_str = s['date'].strftime("%Y-%m-%d") if s['date'] else "تاريخ غير معلوم"
-                    st.markdown(f"- [{s['source']}]({s['source']}) *({date_str})*")
+                # فصل التفكير عن النتيجة المعروضة
+                thinking, final_answer = parse_ai_response(evaluation_result)
                 
-                with st.spinner("يقوم العميل الذكي الآن بتفكيك الادعاء ومحاكمة التواريخ..."):
-                    evaluation_result = evaluate_fact_with_ai(fact_to_check, top_snippets)
-                    
-                    # فصل التفكير عن الإجابة النهائية
-                    thinking, final_answer = parse_ai_response(evaluation_result)
-                    
-                    # إذا كان النموذج يحتوي على تفكير داخلي (مثل كوين) نعرضه في كاشف أنيق ومنسدل
-                    if thinking:
-                        with st.expander("🧠 رؤية مسار خطة وتفكيك النموذج الداخلي (Chain of Thought):"):
-                            st.write(thinking)
-                    
-                    st.subheader("⚖️ حكم منصة التحقق:")
-                    if "صحيح" in final_answer and "جزئي" not in final_answer:
-                        st.success(final_answer)
-                    elif "جزئي" in final_answer:
-                        st.warning(final_answer)
-                    else:
-                        st.error(final_answer)
+                if thinking:
+                    with st.expander("🧠 رؤية مسار خطة المحقق وتقييم النسبة للمصدر الداخلي:"):
+                        st.write(thinking)
+                
+                st.subheader("⚖️ حكم منصة التحقق:")
+                if "صحيح" in final_answer and "جزئي" not in final_answer:
+                    st.success(final_answer)
+                elif "جزئي" in final_answer:
+                    st.warning(final_answer)
+                else:
+                    st.error(final_answer)
