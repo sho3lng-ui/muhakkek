@@ -152,7 +152,7 @@ def evaluate_fact_with_ai(fact, top_snippets):
     try:
         #  تحميل الموديل وضبط حرارته
         response = groq_client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model="allam-2-7b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
@@ -162,7 +162,7 @@ def evaluate_fact_with_ai(fact, top_snippets):
 
 # --- واجهة مستخدم Streamlit ---
 st.set_page_config(page_title="مُدقق الحقائق الذكي", layout="centered")
-st.header("🔍 نظام التأكد من الحقائق الذكي (نسخة تجريبية)")
+st.header("🔍 نظام التأكد من الحقائق الذكي (علام/نسخة تجريبية)")
 
 fact_to_check = st.text_area("أدخل المعلومة المراد فحصها بدقة، ويفضل تحديد المكان مثل البلد أو المحافظة وتحديد الزمان مثل السنة والشهر واليوم لتكون النتائج أفضل:", "يمكن لمريض السكري تناول الحلويات كما يشاء ويتوقف عن تناول الأدوية دون أي مشاكل صحية")
 
