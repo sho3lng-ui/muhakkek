@@ -313,9 +313,12 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 else:
                     st.error(final_answer)
 
-                # 🔥 هنا الاستدعاء الصحيح! بنفس مستوى محاذاة الشروط السابقة
+                # 1. استدعاء أزرار المشاركة الملونة
                 display_share_buttons(fact_to_check, final_answer)
                 
-                # إضافة اختيارية: زر النسخ السريع للحافظة بجانبهم
-                st.copy_to_clipboard(f"الادعاء: {fact_to_check}\nالتحقق: {final_answer}", text="📋 نسخ تقرير التحقق كاملاً")
+                # 2. البديل المستقر والآمن 100% لنسخ التقرير (تم مسح الدالة القديمة تماماً)
+                st.markdown(" ")
+                st.caption("📋 يمكنك نسخ التقرير النصي الجاهز من المربع أدناه عبر أيقونة النسخ في الزاوية:")
+                st.code(f"الادعاء: {fact_to_check}\nالحكم النهائي: {final_answer}", language="text")
+                
 import urllib.parse
