@@ -114,7 +114,7 @@ def get_current_live_date():
 def get_active_model():
     try:
         available_models = [m.id for m in groq_client.models.list().data]
-        for preferred in ["llama-3.3", "llama3-70b"]:
+        for preferred in ["qwen", "llama-3.3", "llama3-70b"]:
             match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
             if match:
                 return match
@@ -220,7 +220,7 @@ def evaluate_fact_with_multi_tier(fact, tier1_sources, tier2_sources, tier3_sour
 
 # --- واجهة مستخدم Streamlit ---
 st.set_page_config(page_title="مُحقق الحقائق الذكي السيادي", layout="centered")
-st.header("🛡️ نظام التأكد من الحقائق الذكي (نظام مستويات الثقة الثلاثة)")
+st.header("🛡️pp نظام التأكد من الحقائق الذكي (نظام مستويات الثقة الثلاثة)")
 st.caption(f"📅 تاريخ النظام اللحظي: {get_current_live_date()}")
 
 fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه ومحاكمته برمتها:", "قالت وكالة رويترز إن السيرفرات العالمية ستتوقف بالكامل غداً")
@@ -245,7 +245,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 tier1_sources = search_trusted_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
 
         # 2. تشغيل المستوى الثاني (البحث في Whitelist الوكالات الكبرى الموثوقة)
-        with st.spinner("🛡️p الطبقة 2: التفتيش المتوازي في وكالات الأنباء العالمية الموثوقة..."):
+        with st.spinner("🛡️ الطبقة 2: التفتيش المتوازي في وكالات الأنباء العالمية الموثوقة..."):
             trusted_query = build_trusted_query(fact_to_check)
             tier2_sources = search_trusted_sources_serper(trusted_query, SERPER_API_KEY, num_results=3)
 
