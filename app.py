@@ -152,7 +152,7 @@ def evaluate_fact_with_ai(fact, top_snippets):
     try:
         #  تحميل الموديل وضبط حرارته
         response = groq_client.chat.completions.create(
-            model="qwen/qwen3-32b",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
