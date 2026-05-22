@@ -53,7 +53,7 @@ def save_check_to_database(fact, verdict, final_answer):
                 "final_answer": final_answer
             }).execute()
             # لإنعاش الصفحة فوراً بعد الحفظ لتظهر النتيجة في الأرشيف
-            st.rerun() 
+            #st.rerun() 
         except Exception as e:
             # هذا السطر سيطبع لك السبب الحقيقي للخطأ في الـ Manage App / Logs الخاصة بـ Streamlit
             st.sidebar.error(f"فشل حفظ البيانات: {e}")
