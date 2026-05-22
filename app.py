@@ -183,7 +183,7 @@ Either [VERDICT: TRUE] or [VERDICT: FALSE] or [VERDICT: PARTIAL]
 
 def display_share_buttons(fact, final_answer):
     st.markdown("---")
-    st.markdown("📢 **شارك النتيجة لمنع انتشار الإشاعات:**")
+    st.markdown("📢 **شارك النتيجة لمنع انتشار الشائعات:**")
     share_text = f"🔍 تم التحقق من: '{fact}'\n⚖️ الحكم: {final_answer}"
     encoded_text = urllib.parse.quote(share_text)
     whatsapp_url = f"https://api.whatsapp.com/send?text={encoded_text}"
@@ -196,11 +196,11 @@ def display_share_buttons(fact, final_answer):
         st.markdown(f'<a href="{twitter_url}" target="_blank"><button style="background-color:#1DA1F2;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;font-weight:bold;">🔵 إكس</button></a>', unsafe_allow_html=True)
 
 # --- واجهة مستخدم Streamlit الرئيسية ---
-st.set_page_config(page_title="مُحقق الحقائق الذكي", layout="centered")
-st.header("🛡️ نظام التأكد من الحقائق الذكي السيادي")
-st.caption(f"📅 تاريخ النظام اللحظي: {get_current_live_date()}")
+st.set_page_config(page_title="المُحقق الذكي", layout="centered")
+st.header("🛡️ المُحقق الذكي")
+st.caption(f"📅 تاريخ التحقق: {get_current_live_date()}")
 
-fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه ومحاكمته:", "")
+fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه:", "")
 
 if st.button("بدء الفحص الجنائي الرقمي"):
     if fact_to_check.strip() == "":
@@ -208,7 +208,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
     else:
         tier1_sources, tier2_sources, tier3_sources = [], [], []
         
-        with st.spinner("🕵️ جاري تفكيك الادعاء ومحاكمة الطبقات الثلاث..."):
+        with st.spinner("🕵️ جاري تفكيك الادعاء وفق 3 طبقات ..."):
             entity_name, expected_domain = extract_source_entity(fact_to_check)
             if entity_name and expected_domain:
                 tier1_sources = search_trusted_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
@@ -268,7 +268,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
 
 # --- 🔥 قسم السجل العام (آخر التدقيقات الحديثة) ---
 st.markdown("---")
-st.subheader("🔔 آخر التدقيقات التي تمت حديثاً عبر المنصة:")
+st.subheader("🔔 آخر الشائعات التي تم تفكيكها حديثاً عبر المنصة:")
 recent_items = get_recent_checks()
 
 if recent_items:
