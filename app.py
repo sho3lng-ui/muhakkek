@@ -178,7 +178,7 @@ def get_current_live_date():
 def get_active_model():
     try:
         available_models = [m.id for m in groq_client.models.list().data]
-        for preferred in ["qwen", "llama-3.3"]:
+        for preferred in ["openai/gpt-oss-120b", "qwen", "llama-3.3"]:
             match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
             if match: return match
         return available_models[0] if available_models else None
