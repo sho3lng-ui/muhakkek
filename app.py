@@ -42,26 +42,30 @@ def init_services():
 
 groq_client, embed_model, supabase_client = init_services()
 
-# --- دالات الحفظ والقراءة من قاعدة البيانات ---
+# --- دالات الحفظ والقراءة من قاعدة البيانات المحدثة لكشف الأخطاء ---
 def save_check_to_database(fact, verdict, final_answer):
-    """حفظ التدقيق الجديد في Supabase"""
+    """حفظ التدقيق الجديد في Supabase مع طباعة الخطأ إن وجد"""
     if supabase_client:
         try:
-            supabase_client.table("fact_checks").insert({
+            data, count = supabase_client.table("fact_checks").insert({
                 "fact": fact,
                 "verdict": verdict,
                 "final_answer": final_answer
             }).execute()
-        except:
-            pass # فشل الحفظ الصامت لا يعطل تجربة المستخدم
+            # لإنعاش الصفحة فوراً بعد الحفظ لتظهر النتيجة في الأرشيف
+            st.rerun() 
+        except Exception as e:
+            # هذا السطر سيطبع لك السبب الحقيقي للخطأ في الـ Manage App / Logs الخاصة بـ Streamlit
+            st.sidebar.error(f"فشل حفظ البيانات: {e}")
 
 def get_recent_checks(limit=5):
-    """جلب آخر التدقيقات من Supabase لعرضها في السجل"""
+    """جلب آخر التدقيقات من Supabase"""
     if supabase_client:
         try:
             response = supabase_client.table("fact_checks").select("*").order("created_at", desc=True).limit(limit).execute()
             return response.data
-        except:
+        except Exception as e:
+            st.sidebar.error(f"فشل قراءة الأرشيف: {e}")
             return []
     return []
 
