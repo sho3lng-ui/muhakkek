@@ -17,6 +17,55 @@ SERPER_API_KEY = os.environ.get('SERPER_API_KEY')
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 
+def apply_arabic_rtl():
+    """حقن كود CSS لقلب واجهة التطبيق بالكامل لتصبح من اليمين إلى اليسار وتغيير الخط ليكون مريحاً للعين"""
+    st.markdown(
+        """
+        <style>
+        /* إجبار التطبيق بالكامل على الاتجاه من اليمين إلى اليسار */
+        .stApp {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* ضبط صناديق النصوص ومدخلات المستخدم لتكون محاذاتها يميناً */
+        div[data-baseweb="textarea"] textarea {
+            direction: rtl !important;
+            text-align: right !important;
+        }
+        div[data-baseweb="input"] input {
+            direction: rtl !important;
+            text-align: right !important;
+        }
+        
+        /* ضبط نصوص قوقل والمحتويات المقتبسة لتلتزم باليمين */
+        .stMarkdown div p {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* تحسين شكل وحواف صناديق التنبيه (الأخضر والأحمر والأصفر) */
+        .stAlert {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* محاذاة العناوين الرئيسية والفرعية */
+        h1, h2, h3, h4, h5, h6, p, span {
+            text-align: right !important;
+            direction: rtl !important;
+        }
+        
+        /* تعديل اتجاه صناديق الأرشيف القابلة للتوسيع (Expander) */
+        .st-emotion-cache-p6w706 {
+            direction: rtl !important;
+            text-align: right !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 # قائمة المصادر الموثوقة (Tier 2)
 TRUSTED_DOMAINS = [
     "bbc.com", "reuters.com", "cnn.com", "skynewsarabia.com", 
@@ -197,6 +246,8 @@ def display_share_buttons(fact, final_answer):
 
 # --- واجهة مستخدم Streamlit الرئيسية ---
 st.set_page_config(page_title="المُحقق الذكي", layout="centered")
+# 🔥 تفعيل التصميم العربي المندمج فوراً عند فتح التطبيق
+apply_arabic_rtl()
 st.header("🛡️ المُحقق الذكي")
 st.caption(f"📅 تاريخ التحقق: {get_current_live_date()}")
 
