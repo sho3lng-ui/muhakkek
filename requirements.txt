@@ -4,3 +4,4 @@ numpy
 sentence-transformers
 beautifulsoup4
 groq
+supabase>=2.4.0
