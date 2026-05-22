@@ -218,6 +218,32 @@ def evaluate_fact_with_multi_tier(fact, tier1_sources, tier2_sources, tier3_sour
     except Exception as e:
         return f"حدث خطأ أثناء استدعاء نموذج جروك: {e}"
 
+import urllib.parse
+
+def display_share_buttons(fact, final_answer):
+    st.markdown("---")
+    st.markdown("📢 **شارك النتيجة والتحقق مع أصدقائك لمنع انتشار الإشاعات:**")
+    
+    # تجهيز النص وتنظيفه
+    share_text = f"🔍 تم التحقق من: '{fact}'\n\n⚖️ الحكم النهائي: {final_answer}"
+    encoded_text = urllib.parse.quote(share_text)
+    
+    whatsapp_url = f"https://api.whatsapp.com/send?text={encoded_text}"
+    twitter_url = f"https://twitter.com/intent/tweet?text={encoded_text}"
+    telegram_url = f"https://t.me/share/url?url=https://your-app-url.streamlit.app&text={encoded_text}"
+    facebook_url = f"https://www.facebook.com/sharer/sharer.php?u=https://your-app-url.streamlit.app"
+
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button style="background-color:#25D366;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;font-weight:bold;">🟢 واتساب</button></a>', unsafe_allow_html=True)
+    with col2:
+        st.markdown(f'<a href="{twitter_url}" target="_blank"><button style="background-color:#1DA1F2;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;font-weight:bold;">🔵 إكس</button></a>', unsafe_allow_html=True)
+    with col3:
+        st.markdown(f'<a href="{telegram_url}" target="_blank"><button style="background-color:#0088cc;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;font-weight:bold;">✈️ تليجرام</button></a>', unsafe_allow_html=True)
+    with col4:
+        st.markdown(f'<a href="{facebook_url}" target="_blank"><button style="background-color:#1877F2;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;font-weight:bold;">🔵 فيسبوك</button></a>', unsafe_allow_html=True)
+
 # --- واجهة مستخدم Streamlit ---
 st.set_page_config(page_title="مُحقق الحقائق الذكي السيادي", layout="centered")
 st.header("🛡️ نظام التأكد من الحقائق الذكي (نظام مستويات الثقة الثلاثة000)")
@@ -287,30 +313,9 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 else:
                     st.error(final_answer)
 
+                # 🔥 هنا الاستدعاء الصحيح! بنفس مستوى محاذاة الشروط السابقة
+                display_share_buttons(fact_to_check, final_answer)
+                
+                # إضافة اختيارية: زر النسخ السريع للحافظة بجانبهم
+                st.copy_to_clipboard(f"الادعاء: {fact_to_check}\nالتحقق: {final_answer}", text="📋 نسخ تقرير التحقق كاملاً")
 import urllib.parse
-
-def display_share_buttons(fact, final_answer):
-    st.markdown("---")
-    st.markdown("📢 **شارك النتيجة والتحقق مع أصدقائك لمنع انتشار الإشاعات:**")
-    
-    # تجهيز النص المراد مشاركته وتنظيفه ليكون مناسباً للروابط (URL Encoding)
-    share_text = f"🔍 تم التحقق من: '{fact}'\n\n⚖️ الحكم النهائي: {final_answer}\n\n📍 تحقق من الأخبار بنفسك عبر منصتنا المتقدمة!"
-    encoded_text = urllib.parse.quote(share_text)
-    
-    # روابط المشاركة المباشرة للشبكات
-    whatsapp_url = f"https://api.whatsapp.com/send?text={encoded_text}"
-    twitter_url = f"https://twitter.com/intent/tweet?text={encoded_text}"
-    telegram_url = f"https://t.me/share/url?url=https://your-app-url.streamlit.app&text={encoded_text}"
-    facebook_url = f"https://www.facebook.com/sharer/sharer.php?u=https://your-app-url.streamlit.app"
-
-    # تصميم الأزرار بشكل أنيق بجانب بعضها البعض باستخدام أعمدة Streamlit
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button style="background-color:#25D366;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;">🟢 واتساب</button></a>', unsafe_allow_html=True)
-    with col2:
-        st.markdown(f'<a href="{twitter_url}" target="_blank"><button style="background-color:#1DA1F2;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;">🔵 إكس (تويتر)</button></a>', unsafe_allow_html=True)
-    with col3:
-        st.markdown(f'<a href="{telegram_url}" target="_blank"><button style="background-color:#0088cc;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;">✈️ تليجرام</button></a>', unsafe_allow_html=True)
-    with col4:
-        st.markdown(f'<a href="{facebook_url}" target="_blank"><button style="background-color:#1877F2;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;">🔵 فيسبوك</button></a>', unsafe_allow_html=True)
