@@ -169,7 +169,11 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
 المستوى 1: {c1}
 المستوى 2: {c2}
 المستوى 3: {c3}
-أصدر حكمك بـ (صحيح، خاطئ، أو جزئيًا صحيح) بالسبب والبديل الحقيقي لعام {datetime.now().year}."""
+
+🛑 [تعليمات صارمة للرد]:
+يجب أن تبدأ ردك بوضع تصنيف قاطع وحيد للادعاء بين هذه الأقواس الثلاثة فقط:
+Either [VERDICT: TRUE] or [VERDICT: FALSE] or [VERDICT: PARTIAL]
+ثم بعد هذا الوسم، اكتب تفكيكك والتحليل الكامل والبديل الحقيقي باللغة العربية براحتك."""
     
     try:
         response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
@@ -215,7 +219,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
             raw_tier3 = search_trusted_sources_serper(f"{fact_to_check} {datetime.now().year}", SERPER_API_KEY, num_results=3)
             tier3_sources = filter_and_rank_sources(fact_to_check, raw_tier3, top_k=2)
 
-        if not tier1_sources and not tier2_sources and not tier3_sources:
+if not tier1_sources and not tier2_sources and not tier3_sources:
             st.warning("لم نتمكن من جلب أدلة حية كافية.")
         else:
             evaluation_result = evaluate_fact_with_multi_tier(fact_to_check, tier1_sources, tier2_sources, tier3_sources, entity_name)
@@ -226,23 +230,41 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                     st.write(thinking)
             
             st.subheader("⚖️ حكم منصة التحقق النهائي:")
+            
+            # استخراج الحكم الصارم من الوسم وتحديد اللون بدقة 100%
             verdict_type = "خاطئ"
-            if "صحيح" in final_answer and "جزئي" not in final_answer:
-                st.success(final_answer)
+            clean_answer = final_answer
+            
+            if "[VERDICT: TRUE]" in final_answer:
                 verdict_type = "صحيح"
-            elif "جزئي" in final_answer:
-                st.warning(final_answer)
+                clean_answer = final_answer.replace("[VERDICT: TRUE]", "").strip()
+                st.success(clean_answer)
+            elif "[VERDICT: PARTIAL]" in final_answer:
                 verdict_type = "جزئيًا صحيح"
+                clean_answer = final_answer.replace("[VERDICT: PARTIAL]", "").strip()
+                st.warning(clean_answer)
+            elif "[VERDICT: FALSE]" in final_answer:
+                verdict_type = "خاطئ"
+                clean_answer = final_answer.replace("[VERDICT: FALSE]", "").strip()
+                st.error(clean_answer)
             else:
-                st.error(final_answer)
+                # حل احتياطي لو لم يلتزم الموديل بالوسم (فحص تقليدي)
+                if "جزئي" in final_answer:
+                    verdict_type = "جزئيًا صحيح"
+                    st.warning(final_answer)
+                elif "صحيح" in final_answer:
+                    verdict_type = "صحيح"
+                    st.success(final_answer)
+                else:
+                    st.error(final_answer)
             
-            # 🔥 حفظ التحقيق الحالي تلقائياً في قاعدة البيانات
-            save_check_to_database(fact_to_check, verdict_type, final_answer)
+            # حفظ التحقيق الحالي بدقة التصنيف الجديدة في قاعدة البيانات
+            save_check_to_database(fact_to_check, verdict_type, clean_answer)
             
-            # عرض أزرار المشاركة والنسخ
-            display_share_buttons(fact_to_check, final_answer)
+            # عرض أزرار المشاركة والنسخ بالنص النظيف
+            display_share_buttons(fact_to_check, clean_answer)
             st.markdown(" ")
-            st.code(f"الادعاء: {fact_to_check}\nالحكم النهائي: {final_answer}", language="text")
+            st.code(f"الادعاء: {fact_to_check}\nالحكم النهائي: {clean_answer}", language="text")
 
 # --- 🔥 قسم السجل العام (آخر التدقيقات الحديثة) ---
 st.markdown("---")
