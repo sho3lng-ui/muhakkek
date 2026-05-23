@@ -228,7 +228,7 @@ c1 = compile_context(tier1, f"موقع {entity_name}", fact, embed_model)
 c2 = compile_context(tier2, "وكالة أنباء موثوقة", fact, embed_model)
 c3 = compile_context(tier3, "الويب العام", fact, embed_model)
     #--------------------------------------------#
-    prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ اليوم الحالي: {get_current_live_date()}. 
+prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ اليوم الحالي: {get_current_live_date()}. 
 الادعاء: "{fact}". موازنة الأدلة بناءً على المستندات المرفقة:
 المستوى 1: {c1}
 المستوى 2: {c2}
