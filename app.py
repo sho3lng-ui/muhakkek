@@ -12,7 +12,7 @@ from numpy import dot
 from numpy.linalg import norm
 from supabase import create_client, Client
 
-# --- [تعديل 7 & 10: Null Safety] جلب وتأمين المفاتيح البرمجية مع تنظيفها ---
+# --- جلب وتأمين المفاتيح البرمجية من بيئة التشغيل ---
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '').strip().strip('"').strip("'")
 SERPER_API_KEY = os.environ.get('SERPER_API_KEY', '').strip().strip('"').strip("'")
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().strip('"').strip("'")
@@ -44,12 +44,11 @@ TRUSTED_DOMAINS = [
     "alqaheranews.net", "almasryalyoum.com", "shorouknews.com", "qna.org.qa"
 ]
 
-# --- [تعديل 11: Multi-stage System] المرحلة الأولى: تهيئة الخدمات بـ Cache مستقل ---
+# --- المرحلة الأولى: تهيئة الخدمات بـ Cache مستقل ---
 @st.cache_resource
 def init_services():
     groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
     
-    # [تعديل 7]: الحماية من فشل تحميل نموذج الـ Embedding
     try:
         embed_model = SentenceTransformer('all-MiniLM-L6-v2')
     except Exception as e:
@@ -89,7 +88,7 @@ def get_recent_checks(limit=5):
             return []
     return []
 
-# --- [تعديل 11: Pipeline Stages] دالات المعالجة والفلترة والـ Ranking ---
+# --- دالات المعالجة والفلترة والـ Ranking ---
 def cosine_similarity(a, b):
     if a is None or b is None: return 0.0
     return dot(a, b) / (norm(a) * norm(b) + 1e-8)
@@ -131,8 +130,26 @@ def search_trusted_sources_sources_serper(query, api_key, num_results=3):
     except:
         return []
 
+# 🔥 [تعديل جديد]: دالة توليد وتوسيع استعلامات البحث الذكية وترجمتها لمنع شح الأدلة عسكرياً وسياسياً
+def generate_optimized_search_queries(fact):
+    """استخدام الـ LLM لتوليد استعلامات بحث صحفية مرادفة باللغتين العربية والإنجليزية لكسر جمود البحث الحرفي"""
+    model = get_active_model()
+    if not model or not groq_client or not fact:
+        return [fact]
+    
+    prompt = f"""أنت خبير سيو (SEO) ومحقق صحفي رقمي متمكن. نريد البحث في جوجل للتحقق من هذا الادعاء بدقة: "{fact}".
+قم بتوليد 3 عبارات بحث مختلفة تماماً وقوية (تشمل مصطلحات بديلة وصحفية، وعبارة دقيقة جداً باللغة الإنجليزية لتسريبات ومصطلحات الوكالات العالمية).
+أعد الإجابة كـ قائمة JSON فقط وصارمة دون أي هوامش أو تفسيرات:
+["استعلام عربي 1", "استعلام عربي بديل وصحفي", "English search query"]"""
+    
+    try:
+        response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
+        queries = json.loads(response.choices[0].message.content.strip().replace("```json", "").replace("```", ""))
+        return queries if isinstance(queries, list) else [fact]
+    except:
+        return [fact]
+
 def extract_evidence_from_url(target_url, fact, top_sentences=3):
-    """[تعديل 11]: خطوة الـ Cleaning والـ Evidence Extraction المشتركة"""
     if not target_url or not fact or not embed_model:
         return ""
     try:
@@ -154,7 +171,6 @@ def extract_evidence_from_url(target_url, fact, top_sentences=3):
             score = float(cosine_similarity(fact_vector, sentence_vectors[idx]))
             scored_sentences.append((score, sentence))
             
-        # [تعديل 12]: التجهيز لـ NLI (نحتفظ هنا بالجمل الممتازة والـ Scores لربطها لاحقاً بالاستدلال المنطقي)
         top_evidences = sorted(scored_sentences, key=lambda x: x[0], reverse=True)[:top_sentences]
         return " | ".join([ev[1] for ev in top_evidences])
     except:
@@ -198,25 +214,22 @@ def parse_ai_response(full_text):
     return None, full_text
 
 def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
-    """[تعديل 8 & 9]: تحويل بناء السياق إلى Evidence Builder صارم وموجه للـ LLM"""
     model = get_active_model()
     if not model: return "خطأ في الاتصال بنظام المحاكمة الذكي"
     
-    # [تعديل 8]: بناء الـ Evidence Builder الهيكلي المنظم لربط الجمل بمصادرها
     def build_evidence_context(sources, label):
         if not sources: return "لا توجد أدلة حية مسجلة في هذا المستوى."
         context_parts = []
         for idx, s in enumerate(sources[:2], 1):
             evidence = extract_evidence_from_url(s['source'], fact)
             final_text = evidence if evidence else s['text']
-            context_parts.append(f"الدليل رقم ({idx}) [{label}] -\nرابط المصدر الموثق: {s['source']}\nالنصوص الجنائية المستخلصة: {final_text}")
+            context_parts.append(f"الدليل رقم ({idx}) [{label}] -\nرابط المصدر الموثق: {s['source']}\nالنصوص الجنائية المستخلصصة: {final_text}")
         return "\n\n".join(context_parts)
 
     c1 = build_evidence_context(tier1, f"الموقع الرسمي لـ {entity_name if entity_name else 'الجهة المنسوب إليها'}")
     c2 = build_evidence_context(tier2, "وكالات الأنباء والمصادر العالمية الموثوقة")
     c3 = build_evidence_context(tier3, "البحث العام في شبكة الويب")
     
-    # [تعديل 6 & 9]: تحديث الـ Prompt ليصبح Evidence-Based بالكامل ويدعم حالة عدم كفاية الأدلة
     prompt = f"""أنت رئيس تحرير ومنصة مستقلة ومحقق جنائي رقمي صارم لتدقيق الحقائق والمعلومات.
 تاريخ التحقيق اللحظي الحالي هو: {get_current_live_date()}.
 
@@ -273,7 +286,6 @@ st.caption(f"📅 تاريخ التحقق: {get_current_live_date()}")
 
 fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه:", "")
 
-# [تعديل 10]: الحماية المبكرة والمنع المباشر عند محاولة إرسال بيانات فارغة أو عدم وجود APIs
 if st.button("بدء الفحص الجنائي الرقمي"):
     if not GROQ_API_KEY or not SERPER_API_KEY:
         st.error("🚨 خطأ في النظام: المفاتيح البرمجية (API Keys) غير متوفرة في بيئة التشغيل الحالية.")
@@ -282,26 +294,43 @@ if st.button("بدء الفحص الجنائي الرقمي"):
     else:
         tier1_sources, tier2_sources, tier3_sources = [], [], []
         
-        with st.spinner("🕵️ جاري تنفيذ مراحل الـ Pipeline الرقمي وسحب الأدلة..."):
-            # خطوة الـ Retrieval
+        # 🔥 [تعديل جديد]: خطوة توليد استعلامات البحث الذكية والموسعة قبل ضرب السيرفرات
+        with st.spinner("🕵️ جاري تحليل هندسة الادعاء وتوسيع نطاق البحث دلالياً باللغتين..."):
+            optimized_queries = generate_optimized_search_queries(fact_to_check)
+            st.caption(f"🔍 عوالم البحث النشطة الآن: {', '.join(optimized_queries)}")
+        
+        with st.spinner("🕵️ جاري سحب الأدلة الجنائية مصفوفياً وفحص السجلات الحية..."):
             entity_name, expected_domain = extract_source_entity(fact_to_check)
+            
+            # معالجة المستوى الأول والثاني باستعلام المستخدم الأساسي لتوفير الـ Rate Limits
             if entity_name and expected_domain:
                 tier1_sources = search_trusted_sources_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
             
             sites_query = " OR ".join([f"site:{d}" for d in TRUSTED_DOMAINS[:4]])
             tier2_sources = search_trusted_sources_sources_serper(f"({sites_query}) {fact_to_check}", SERPER_API_KEY, num_results=2)
             
-            raw_tier3 = search_trusted_sources_sources_serper(f"{fact_to_check} {datetime.now().year}", SERPER_API_KEY, num_results=3)
-            # خطوة الـ Ranking والتنظيف المشترك
-            tier3_sources = filter_and_rank_sources(fact_to_check, raw_tier3, top_k=2)
+            # 🔥 [تعديل جديد]: البحث المصفوفي عبر العبارات الموسعة والمترجمة لضمان قنص التقارير العالمية
+            raw_tier3 = []
+            for q in optimized_queries:
+                search_results = search_trusted_sources_sources_serper(q, SERPER_API_KEY, num_results=2)
+                raw_tier3.extend(search_results)
+            
+            # تصفية الروابط المكررة الناتجة عن تكرار البحث
+            seen_sources = set()
+            unique_tier3 = []
+            for item in raw_tier3:
+                if item['source'] not in seen_sources:
+                    seen_sources.add(item['source'])
+                    unique_tier3.append(item)
+            
+            # التقييم والـ Ranking النهائي بناءً على المدخلات الموسعة
+            tier3_sources = filter_and_rank_sources(fact_to_check, unique_tier3, top_k=3)
 
-        # [تعديل 6 & 10]: إذا كانت كل المصادر فارغة تماماً من الإنترنت، يتم تفعيل Early Return آمن دون استدعاء الموديل عبثاً
         if not tier1_sources and not tier2_sources and not tier3_sources:
             st.error("⚠️ [حكم المنصة]: غير كافي للحكم (INSUFFICIENT EVIDENCE)")
-            st.info("السبب: لم يعثر النظام على أي مصادر حية أو أرشفة رقمية تتحدث عن هذا الادعاء على شبكة الويب.")
+            st.info("السبب: لم يعثر النظام على أي أرشفة رقمية تتحدث عن هذه العبارات الموسعة على الويب.")
             save_check_to_database(fact_to_check, "غير كافي للحكم", "لا توجد أدلة رقمية متوفرة على الويب حول هذا الادعاء.")
         else:
-            # خطوة الـ Verification
             evaluation_result = evaluate_fact_with_multi_tier(fact_to_check, tier1_sources, tier2_sources, tier3_sources, entity_name)
             thinking, final_answer = parse_ai_response(evaluation_result)
             
@@ -313,7 +342,6 @@ if st.button("بدء الفحص الجنائي الرقمي"):
             verdict_type = "خاطئ"
             clean_answer = final_answer
             
-            # [تعديل 6]: فرز وتلوين النتيجة الرابعة الجديدة لحالة عدم كفاية الأدلة
             if "[VERDICT: TRUE]" in final_answer:
                 verdict_type = "صحيح"
                 clean_answer = final_answer.replace("[VERDICT: TRUE]", "").strip()
@@ -331,7 +359,6 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 clean_answer = final_answer.replace("[VERDICT: INSUFFICIENT_EVIDENCE]", "").strip()
                 st.info(clean_answer)
             else:
-                # حل احتياطي وقائي
                 if "غير كاف" in final_answer or "غموض" in final_answer:
                     verdict_type = "غير كافي للحكم"
                     st.info(final_answer)
@@ -349,14 +376,13 @@ if st.button("بدء الفحص الجنائي الرقمي"):
             st.markdown(" ")
             st.code(f"الادعاء: {fact_to_check}\nالحكم النهائي: {clean_answer}", language="text")
 
-# --- قسم السجل العام (الأرشيف) ---
+# --- قسم السجل العام ---
 st.markdown("---")
 st.subheader("🔔 آخر الشائعات التي تم تفكيكها حديثاً عبر المنصة:")
 recent_items = get_recent_checks()
 
 if recent_items:
     for item in recent_items:
-        # فرز تلوين الأيقونات للأرشيف بما يشمل الحالة الجديدة
         v_type = item.get('verdict', 'خاطئ')
         badge = "🔵" if "غير كافي" in v_type else ("🔴" if "خاطئ" in v_type else ("🟡" if "جزئي" in v_type else "🟢"))
         with st.expander(f"{badge} {item['fact'][:70]}..."):
