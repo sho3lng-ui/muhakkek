@@ -193,42 +193,44 @@ def parse_ai_response(full_text):
         return parts[0].replace("<think>", "").strip(), parts[1].strip()
     return None, full_text
 
-def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
+def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name, embed_model, groq_client):
     model = get_active_model()
-    if not model: return "خطأ في الاتصال بالنموذج"
-    #---------------------------------------------#
+    if not model:
+        return "خطأ في الاتصال بالنموذج"
+
+    # 1. الدالة المساعدة لمعالجة المصادر
     def get_source_content(source, fact, embed_model):
         """دالة مساعدة لمعالجة محتوى كل مصدر على حدة."""
-    try:
-        article = download_and_extract(source['source'])
-        sentences = split_sentences(article)
-        top_evidence = rank_sentences_by_similarity(
-            claim=fact,
-            sentences=sentences,
-            embed_model=embed_model,
-            top_k=3
-        )
-        return top_evidence if top_evidence else source['text']
-    except Exception:
-        return source['text']
+        try:
+            article = download_and_extract(source['source'])
+            sentences = split_sentences(article)
+            top_evidence = rank_sentences_by_similarity(
+                claim=fact,
+                sentences=sentences,
+                embed_model=embed_model,
+                top_k=3
+            )
+            return top_evidence if top_evidence else source['text']
+        except Exception:
+            return source['text']
 
-def compile_context(sources, label, fact, embed_model):
-    """دالة تجميع السياق بتنسيق مرتب."""
-    formatted_sources = []
-    
-    for s in sources[:2]:
-        content = get_source_content(s, fact, embed_model)
-        formatted_text = f"[{label}: {s['source']}]\nالمحتوى: {content}"
-        formatted_sources.append(formatted_text)
-        
-    return "\n\n".join(formatted_sources)
+    # 2. دالة تجميع السياق
+    def compile_context(sources, label, fact, embed_model):
+        """دالة تجميع السياق بتنسيق مرتب."""
+        formatted_sources = []
+        for s in sources[:2]:
+            content = get_source_content(s, fact, embed_model)
+            formatted_text = f"[{label}: {s['source']}]\nالمحتوى: {content}"
+            formatted_sources.append(formatted_text)
+        return "\n\n".join(formatted_sources)
 
-# طريقة الاستدعاء:
-c1 = compile_context(tier1, f"موقع {entity_name}", fact, embed_model)
-c2 = compile_context(tier2, "وكالة أنباء موثوقة", fact, embed_model)
-c3 = compile_context(tier3, "الويب العام", fact, embed_model)
-    #--------------------------------------------#
-prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ اليوم الحالي: {get_current_live_date()}. 
+    # 3. إعداد السياق
+    c1 = compile_context(tier1, f"موقع {entity_name}", fact, embed_model)
+    c2 = compile_context(tier2, "وكالة أنباء موثوقة", fact, embed_model)
+    c3 = compile_context(tier3, "الويب العام", fact, embed_model)
+
+    # 4. بناء الـ Prompt
+    prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ اليوم الحالي: {get_current_live_date()}. 
 الادعاء: "{fact}". موازنة الأدلة بناءً على المستندات المرفقة:
 المستوى 1: {c1}
 المستوى 2: {c2}
@@ -237,13 +239,18 @@ prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ
 🛑 [تعليمات صارمة للرد]:
 يجب أن تبدأ ردك بوضع تصنيف قاطع وحيد للادعاء بين هذه الأقواس الثلاثة فقط:
 Either [VERDICT: TRUE] or [VERDICT: FALSE] or [VERDICT: PARTIAL]
-ثم بعد هذا الوسم، اكتب تفكيكك والتحليل الكامل والبديل الحقيقي باللغة العربية براحتك."""
-    
-try:
-    response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
+ثم بعد هذا الوسم، اكتب تفكيكك والتحليل الكامل والبديل الحقيقي باللغة العربية."""
+
+    # 5. استدعاء النموذج
+    try:
+        response = groq_client.chat.completions.create(
+            model=model, 
+            messages=[{"role": "user", "content": prompt}], 
+            temperature=0.1
+        )
         return response.choices[0].message.content.strip()
-except Exception as e:
-    return f"خطأ: {e}"
+    except Exception as e:
+        return f"خطأ: {e}"
 
 def display_share_buttons(fact, final_answer):
     st.markdown("---")
