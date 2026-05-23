@@ -243,7 +243,7 @@ def display_share_buttons(fact, final_answer):
 # --- واجهة مستخدم Streamlit الرئيسية ---
 st.set_page_config(page_title="(إصدار تجريبي) المُحقق الذكي", layout="centered")
 apply_arabic_rtl()
-st.header("🛡️ المُحقق الذكي للمعلومات والأخبار")
+st.header("🛡️ المُحقق الذكي للمعلومات والأخبار -- إصدار تجريبي")
 st.caption(f"📅 تاريخ التحقق الحالي: {get_current_live_date()}")
 
 fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه:", "")
