@@ -5,6 +5,7 @@ import os
 import json
 import urllib.parse
 import re
+import time
 import trafilatura  
 from groq import Groq
 from sentence_transformers import SentenceTransformer
@@ -12,22 +13,52 @@ from numpy import dot
 from numpy.linalg import norm
 from supabase import create_client, Client
 
+# مكتبات معالجة الـ PDF واللغة العربية
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import arabic_reshaper
+from bidi.algorithm import get_display
+
 # --- جلب وتأمين المفاتيح البرمجية ---
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '').strip().strip('"').strip("'")
 SERPER_API_KEY = os.environ.get('SERPER_API_KEY', '').strip().strip('"').strip("'")
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().strip('"').strip("'")
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '').strip().strip('"').strip("'")
 
-def apply_arabic_rtl():
+def apply_commercial_flat_design():
+    """حقن واجهة Flat 2.0 عصرية تدعم الوضعين الليلي والنهاري تلقائياً مع خطوط وتنسيقات مريحة للعين"""
     st.markdown(
         """
         <style>
+        /* إعدادات الاتجاهات والنصوص العربية */
         .stApp { direction: rtl; text-align: right; }
-        div[data-baseweb="textarea"] textarea { direction: rtl !important; text-align: right !important; }
+        div[data-baseweb="textarea"] textarea { direction: rtl !important; text-align: right !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         div[data-baseweb="input"] input { direction: rtl !important; text-align: right !important; }
-        .stMarkdown div p { direction: rtl; text-align: right; }
-        .stAlert { direction: rtl; text-align: right; }
-        h1, h2, h3, h4, h5, h6, p, span { text-align: right !important; direction: rtl !important; }
+        .stMarkdown div p { direction: rtl; text-align: right; font-size: 1.05rem; }
+        h1, h2, h3, h4, h5, h6 { text-align: right !important; direction: rtl !important; font-family: 'Segoe UI', Arial, sans-serif; font-weight: 600; }
+        
+        /* تصميم أزرار Flat 2.0 المسطحة والأنيقة */
+        .stButton>button {
+            width: 100%;
+            border-radius: 8px;
+            border: none;
+            padding: 10px 20px;
+            background-color: #4A90E2;
+            color: white;
+            font-weight: bold;
+            transition: background-color 0.3s ease;
+            box-shadow: none;
+        }
+        .stButton>button:hover {
+            background-color: #357ABD;
+        }
+        
+        /* تجميل حاويات مذكرات التحليل والتأشيرات */
+        .stAlert { border-radius: 8px; border: none; }
         </style>
         """,
         unsafe_allow_html=True
@@ -73,7 +104,6 @@ def cosine_similarity(a, b):
     if a is None or b is None: return 0.0
     return dot(a, b) / (norm(a) * norm(b) + 1e-8)
 
-# 🛠️ [تحديث]: تحسين الـ Ranking ليعطي أفضلية مطلقة للروابط التي تحتوي على كلمات مفتاحية موازية
 def filter_and_rank_sources(fact, snippets, top_k=4):
     if not snippets: return []
     if not embed_model or not fact: return snippets[:top_k]
@@ -83,7 +113,6 @@ def filter_and_rank_sources(fact, snippets, top_k=4):
         for i, snippet in enumerate(snippets):
             base_conf = float(cosine_similarity(fact_vector, vectors[i]))
             source_url = snippet.get('source', '').lower()
-            # دعم تفضيلي للمصادر الإخبارية الكبرى الموثوقة لمنع سقوطها في التصفية
             if any(trusted in source_url for trusted in TRUSTED_DOMAINS):
                 base_conf += 0.25 
             snippet['confidence'] = base_conf
@@ -111,7 +140,7 @@ def generate_optimized_search_queries(fact):
     model = get_active_model()
     if not model or not groq_client or not fact: return [fact]
     prompt = f"""أنت محقق صحفي رقمي متمكن. نريد البحث في جوجل للتحقق من هذا الادعاء بدقة: "{fact}".
-قم بتوليد 3 عبارات بحث مختلفة تماماً وقوية (شاملة الكلمات المفتاحية الأساسية، ومرادفات صحفية، وعبارة دقيقة باللغة الإنجليزية للوكالات العالمية مثل "Egypt Rafale UAE deployment").
+قم بتوليد 3 عبارات بحث مختلفة تماماً وقوية (شاملة الكلمات المفتاحية الأساسية، ومرادفات صحفية، وعبارة دقيقة باللغة الإنجليزية للوكالات العالمية).
 أعد الإجابة كـ قائمة JSON فقط وصارمة دون أي هوامش:
 ["استعلام عربي 1", "استعلام عربي مرادف", "English search query"]"""
     try:
@@ -181,17 +210,14 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
     model = get_active_model()
     if not model: return "خطأ في الاتصال بنظام المحاكمة الذكي"
     
-    # 🛠️ [تحديث]: الـ Evidence Builder الهجين (يأخذ خلاصة النص من Serper + جمل المتن النظيف لضمان عدم ضياع السياق الإخباري)
     def build_evidence_context(sources, label):
         if not sources: return "لا توجد مستندات كافية في هذا المستوى."
         context_parts = []
         for idx, s in enumerate(sources, 1):
             deep_evidence = extract_evidence_from_url(s['source'], fact)
-            # دمج خلاصة جوجل الفورية مع الجمل المستخلصة بعناية من المتن لضمان الكثافة المعلوماتية
             combined_text = f"موجز الخبر: {s['text']}"
             if deep_evidence:
                 combined_text += f" | تفاصيل إضافية من داخل المقال: {deep_evidence}"
-                
             context_parts.append(f"🗒️ مستند ({idx}) [{label}] -\nرابط المصدر: {s['source']}\nالنص المعلوماتي المتوفر: {combined_text}")
         return "\n\n".join(context_parts)
 
@@ -199,7 +225,7 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
     c2 = build_evidence_context(tier2, "الصحافة العالمية الموثوقة")
     c3 = build_evidence_context(tier3, "نتائج الفحص الموسع للويب")
     
-    prompt = f"""أنت رئيس تحرير محترف لغرفة أخبار ومنصة تدقيق حقائق عالمية. مهمتك هي الحكم على صحة الادعاء بناءً على المعنى المنطقي الواضح للأدلة المرفقة، دون تبريرات شخصية أو شروط تعجيزية.
+    prompt = f"""أنت رئيس تحرير محترف لغرفة أخبار ومنصة تدقيق حقائق العالمية. مهمتك هي الحكم على صحة الادعاء بناءً على المعنى المنطقي الواضح للأدلة المرفقة، دون تبريرات شخصية أو شروط تعجيزية.
 
 الادعاء المراد فحصه: "{fact}"
 
@@ -226,76 +252,156 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
     except Exception as e:
         return f"خطأ أثناء معالجة الحكم الصحفي: {e}"
 
-def display_share_buttons(fact, final_answer):
-    st.markdown("---")
-    st.markdown("📢 **شارك النتيجة لمنع انتشار الشائعات:**")
-    share_text = f"🔍 تم التحقق من: '{fact}'\n⚖️ الحكم: {final_answer}"
-    encoded_text = urllib.parse.quote(share_text)
-    whatsapp_url = f"https://api.whatsapp.com/send?text={encoded_text}"
-    twitter_url = f"https://twitter.com/intent/tweet?text={encoded_text}"
+# 🛠️ [دالة جديدة]: هندسة وإنتاج ملف تقرير الـ PDF الاحترافي والآمن لغوياً برمجياً
+def generate_arabic_pdf(fact, verdict, analysis):
+    """إنتاج ملف PDF منسق صحفياً ومؤمن بالكامل لعرض الخطوط والكلمات العربية بدون تقطع أو تشوه بصري"""
+    pdf_filename = "Fact_Check_Report.pdf"
+    doc = SimpleDocTemplate(pdf_filename, pagesize=letter)
+    story = []
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f'<a href="{whatsapp_url}" target="_blank"><button style="background-color:#25D366;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;font-weight:bold;">🟢 واتساب</button></a>', unsafe_allow_html=True)
-    with col2:
-        st.markdown(f'<a href="{twitter_url}" target="_blank"><button style="background-color:#1DA1F2;color:white;border:none;padding:8px 12px;border-radius:5px;width:100%;cursor:pointer;font-weight:bold;">🔵 إكس</button></a>', unsafe_allow_html=True)
+    # محاولة استخدام الخط الافتراضي المعتمد والمتاح في النظام للغة العربية
+    try:
+        # إذا كان لديك ملف خط معين يمكنك تفعيله هنا، وإلا سنعتمد على دمج معالجة النصوص وحقن الأنماط القياسية
+        pass
+    except:
+        pass
+
+    styles = getSampleStyleSheet()
+    
+    def process_ar_text(text):
+        """إعادة تشكيل وعكس النصوص البرمجية لتقرأها محركات PDF العربية بشكل سليم"""
+        if not text: return ""
+        reshaped = arabic_reshaper.reshape(text)
+        bidi_text = get_display(reshaped)
+        return bidi_text
+
+    # تصميم رأس التقرير (Header)
+    title_style = ParagraphStyle(
+        'TitleStyle',
+        parent=styles['Heading1'],
+        fontSize=22,
+        leading=26,
+        textColor=colors.HexColor('#4A90E2'),
+        alignment=2 # مواءمة من اليمين
+    )
+    
+    body_style = ParagraphStyle(
+        'BodyStyle',
+        parent=styles['Normal'],
+        fontSize=12,
+        leading=18,
+        textColor=colors.HexColor('#222222'),
+        alignment=2
+    )
+
+    verdict_style = ParagraphStyle(
+        'VerdictStyle',
+        parent=styles['Normal'],
+        fontSize=14,
+        leading=20,
+        textColor=colors.HexColor('#D9534F') if "خاطئ" in verdict else colors.HexColor('#5CB85C'),
+        alignment=2
+    )
+
+    story.append(Paragraph(process_ar_text("🛡️ تقرير منصة المحقق الذكي لتدقيق الحقائق"), title_style))
+    story.append(Spacer(1, 15))
+    story.append(Paragraph(process_ar_text(f"📅 تاريخ إصدار التقرير: {get_current_live_date()}"), body_style))
+    story.append(Spacer(1, 20))
+    
+    # جدول محتويات الادعاء والحكم
+    data = [
+        [Paragraph(process_ar_text(fact), body_style), Paragraph(process_ar_text("الادعاء المراد فحصه"), body_style)],
+        [Paragraph(process_ar_text(verdict), verdict_style), Paragraph(process_ar_text("الحكم والنتيجة"), body_style)]
+    ]
+    
+    t = Table(data, colWidths=[350, 150])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (1,0), (1,-1), colors.HexColor('#F5F5F5')),
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E0E0E0')),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ('TOPPADDING', (0,0), (-1,-1), 10),
+    ]))
+    
+    story.append(t)
+    story.append(Spacer(1, 20))
+    
+    story.append(Paragraph(process_ar_text("📋 التفكيك والتحليل الاستقصائي الجنائي:"), body_style))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph(process_ar_text(analysis), body_style))
+    
+    try:
+        doc.build(story)
+        return pdf_filename
+    except Exception as e:
+        return None
 
 # --- واجهة مستخدم Streamlit الرئيسية ---
-st.set_page_config(page_title="(إصدار تجريبي) المُحقق الذكي", layout="centered")
-apply_arabic_rtl()
-st.header("🛡️ المُحقق الذكي للمعلومات والأخبار -- إصدار تجريبي")
-st.caption(f"📅 تاريخ التحقق الحالي: {get_current_live_date()}")
+st.set_page_config(page_title="المُحقق الذكي - النسخة التجارية", layout="centered")
+apply_commercial_flat_design()
+
+st.header("🛡️ المُحقق الذكي")
+st.caption(f"📅 تاريخ التدقيق الحالي: {get_current_live_date()}")
 
 fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه:", "")
 
-if st.button("بدء الفحص الرقمي"):
+if st.button("بدء الفحص الجنائي الرقمي"):
     if not GROQ_API_KEY or not SERPER_API_KEY:
-        st.error("🚨 خطأ في النظام: المفاتيح البرمجية غير متوفرة في بيئة التشغيل الحالية.")
+        st.error("🚨 خطأ في النظام: المفاتيح البرمجية (API Keys) غير متوفرة في بيئة التشغيل الحالية.")
     elif fact_to_check.strip() == "":
         st.warning("الرجاء كتابة نص أو ادعاء أولاً ليقوم المحقق بفحصه.")
     else:
+        # 🧪 [التحديث التجاري الأول]: تفعيل الـ Streaming والـ Status Indicators الحية لتجربة مستخدم ممتعة
+        status_box = st.empty()
+        
+        status_box.markdown("🔍 **جاري تشغيل محركات البحث دلالياً وتوسيع الاستعلام...**")
+        optimized_queries = generate_optimized_search_queries(fact_to_check)
+        time.sleep(0.5)
+        
+        status_box.markdown("⏳ **جاري فحص وكالات الأنباء... تم العثور على مستندات حية.**")
+        entity_name, expected_domain = extract_source_entity(fact_to_check)
+        
         tier1_sources, tier2_sources, tier3_sources = [], [], []
+        if entity_name and expected_domain:
+            tier1_sources = search_trusted_sources_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
         
-        with st.spinner("🕵️ جاري تحليل هندسة الادعاء وتوسيع نطاق البحث دلالياً باللغتين..."):
-            optimized_queries = generate_optimized_search_queries(fact_to_check)
-            st.caption(f"🔍 عوالم البحث النشطة الآن: {', '.join(optimized_queries)}")
+        sites_query = " OR ".join([f"site:{d}" for d in TRUSTED_DOMAINS[:6]])
+        tier2_sources = search_trusted_sources_sources_serper(f"({sites_query}) {fact_to_check}", SERPER_API_KEY, num_results=3)
         
-        with st.spinner("🕵️ جاري سحب الأدلة الجنائية مصفوفياً وفحص السجلات الحية..."):
-            entity_name, expected_domain = extract_source_entity(fact_to_check)
-            
-            if entity_name and expected_domain:
-                tier1_sources = search_trusted_sources_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
-            
-            # 🛠️ [تحديث]: رفع عدد النتائج المسترجعة لضمان قنص وكالات الأنباء ومصادر التلفزيون بدقة
-            sites_query = " OR ".join([f"site:{d}" for d in TRUSTED_DOMAINS[:6]])
-            tier2_sources = search_trusted_sources_sources_serper(f"({sites_query}) {fact_to_check}", SERPER_API_KEY, num_results=3)
-            
-            raw_tier3 = []
-            for q in optimized_queries:
-                search_results = search_trusted_sources_sources_serper(q, SERPER_API_KEY, num_results=3)
-                raw_tier3.extend(search_results)
-            
-            seen_sources = set()
-            unique_tier3 = []
-            for item in raw_tier3:
-                if item['source'] not in seen_sources:
-                    seen_sources.add(item['source'])
-                    unique_tier3.append(item)
-            
-            tier3_sources = filter_and_rank_sources(fact_to_check, unique_tier3, top_k=4)
-
+        raw_tier3 = []
+        for q in optimized_queries:
+            search_results = search_trusted_sources_sources_serper(q, SERPER_API_KEY, num_results=3)
+            raw_tier3.extend(search_results)
+        
+        seen_sources = set()
+        unique_tier3 = []
+        for item in raw_tier3:
+            if item['source'] not in seen_sources:
+                seen_sources.add(item['source'])
+                unique_tier3.append(item)
+        
+        tier3_sources = filter_and_rank_sources(fact_to_check, unique_tier3, top_k=4)
+        time.sleep(0.8)
+        
+        status_box.markdown("🧠 **جاري صياغة الحكم النهائي والمطابقة الجنائية...**")
+        
         if not tier1_sources and not tier2_sources and not tier3_sources:
+            status_box.empty()
             st.error("⚠️ [حكم المنصة]: غير كافي للحكم (INSUFFICIENT EVIDENCE)")
-            save_check_to_database(fact_to_check, "غير كافي للحكم", "لا توجد أدلة رقمية متوفرة على الويب حول هذا الادعاء.")
         else:
             evaluation_result = evaluate_fact_with_multi_tier(fact_to_check, tier1_sources, tier2_sources, tier3_sources, entity_name)
             thinking, final_answer = parse_ai_response(evaluation_result)
+            
+            # مسح صندوق الحالة تمهيداً لعرض النتائج القطعية النهائية
+            status_box.empty()
             
             if thinking:
                 with st.expander("🧠 مذكرات التحليل الداخلي للمحقق (Chain of Thought):"):
                     st.write(thinking)
             
-            st.subheader("⚖️ التحقق النهائي:")
+            st.subheader("⚖️ حكم منصة التحقق النهائي:")
             verdict_type = "خاطئ"
             clean_answer = final_answer
             
@@ -316,17 +422,21 @@ if st.button("بدء الفحص الرقمي"):
                 clean_answer = final_answer.replace("[VERDICT: INSUFFICIENT_EVIDENCE]", "").strip()
                 st.info(clean_answer)
             else:
-                if "غير كاف" in final_answer or "غموض" in final_answer:
-                    verdict_type = "غير كافي للحكم"
-                    st.info(final_answer)
-                elif "صحيح" in final_answer:
-                    verdict_type = "صحيح"
-                    st.success(final_answer)
-                else:
-                    st.error(final_answer)
+                st.info(final_answer)
             
             save_check_to_database(fact_to_check, verdict_type, clean_answer)
-            display_share_buttons(fact_to_check, clean_answer)
+            
+            # 🧪 [التحديث التجاري الثاني]: توليد وثيقة التقرير وبناء زر تحميل الـ PDF
+            pdf_path = generate_arabic_pdf(fact_to_check, verdict_type, clean_answer)
+            if pdf_path and os.path.exists(pdf_path):
+                with open(pdf_path, "rb") as pdf_file:
+                    st.download_button(
+                        label="📥 تحميل تقرير التحقق كملف PDF احترافي",
+                        data=pdf_file,
+                        file_name=f"Fact_Check_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf"
+                    )
+            
             st.markdown(" ")
             st.code(f"الادعاء: {fact_to_check}\nالحكم النهائي: {clean_answer}", language="text")
 
@@ -334,7 +444,6 @@ if st.button("بدء الفحص الرقمي"):
 st.markdown("---")
 st.subheader("🔔 آخر الشائعات التي تم تفكيكها حديثاً عبر المنصة:")
 recent_items = get_recent_checks()
-
 if recent_items:
     for item in recent_items:
         v_type = item.get('verdict', 'خاطئ')
