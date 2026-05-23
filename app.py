@@ -365,7 +365,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 with st.expander("🧠 مذكرات التحليل الداخلي للمحقق (Chain of Thought) [Pro Only]:"):
                     st.write(thinking)
             
-            st.subheader("⚖️ حكم منصة التحقق النهائي:")
+            st.subheader("⚖️ الحكم النهائي:")
             verdict_type = "خاطئ"
             clean_answer = final_answer
             
