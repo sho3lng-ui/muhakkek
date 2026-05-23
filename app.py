@@ -54,6 +54,11 @@ def apply_commercial_flat_design():
             box-shadow: none;
         }
         .stButton>button:hover { background-color: #357ABD; }
+                /* إخفاء تام لأي محتوى هارب من السايدبار عندما يكون مغلقاً */
+        section[data-testid="stSidebar"][aria-expanded="false"] {
+            display: none !important;
+            visibility: hidden !important;
+        }
         </style>
         """,
         unsafe_allow_html=True
