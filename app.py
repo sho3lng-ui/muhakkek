@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import json
 import urllib.parse
+import re
 from bs4 import BeautifulSoup
 from groq import Groq
 from sentence_transformers import SentenceTransformer
@@ -141,14 +142,39 @@ def search_trusted_sources_serper(query, api_key, num_results=3):
     except:
         return []
 
-def scrape_full_content(target_url):
+# 🔥 🔥 الطبقة الجديدة المحدثة: استخراج الأدلة الذكي بدلاً من كشط المقال الكامل 🔥 🔥
+def extract_evidence_from_url(target_url, fact, top_sentences=3):
+    """تقطيع المقال الكامل إلى جُمل، ومقارنتها دلالياً بالادعاء، وسحب الأدلة الأكثر صلة فقط"""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         response = requests.get(target_url, headers=headers, timeout=5)
         soup = BeautifulSoup(response.text, 'html.parser')
         text_elements = soup.find_all(['p', 'h1', 'h2', 'h3'])
         full_text = " ".join([txt.get_text().strip() for txt in text_elements if txt.get_text().strip()])
-        return full_text[:1200]
+        
+        if not full_text.strip() or not embed_model:
+            return ""
+        
+        # تقطيع النص إلى جُمل بناءً على الفواصل والنقاط العربية والأجنبية
+        sentences = re.split(r'[.\n।?!।،•●]', full_text)
+        sentences = [s.strip() for s in sentences if len(s.strip()) > 15] # فلترة العبارات القصيرة جداً كالإعلانات والأزرار
+        
+        if not sentences:
+            return ""
+            
+        # قياس التشابه الدلالي لكل جملة مع الادعاء الأصلي لفرز الأدلة
+        fact_vector = embed_model.encode([fact])[0]
+        sentence_vectors = embed_model.encode(sentences)
+        
+        scored_sentences = []
+        for idx, sentence in enumerate(sentences):
+            score = float(cosine_similarity(fact_vector, sentence_vectors[idx]))
+            scored_sentences.append((score, sentence))
+            
+        # رص الجمل تنازلياً حسب دقة الدليل واقتطاع الأفضل
+        top_evidences = sorted(scored_sentences, key=lambda x: x[0], reverse=True)[:top_sentences]
+        evidence_text = " | ".join([ev[1] for ev in top_evidences])
+        return evidence_text
     except:
         return ""
 
@@ -163,7 +189,6 @@ def get_current_live_date():
 def get_active_model():
     try:
         available_models = [m.id for m in groq_client.models.list().data]
-        # 🔥 تم إصلاح هذا السطر وحذف موديل أوبن إيه آي غير الموجود في جروك
         for preferred in ["qwen", "llama-3.3", "llama3-8b"]:
             match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
             if match: return match
@@ -192,15 +217,21 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
     model = get_active_model()
     if not model: return "خطأ في الاتصال بالنموذج"
     
+    # تحويل محاكمة الطبقات الثلاث لتبنى على الأدلة المستخرجة حصرياً (Evidence Based)
     def compile_context(sources, label):
-        return "\n\n".join([f"[{label}: {s['source']}]\nالمحتوى: {scrape_full_content(s['source']) or s['text']}" for s in sources[:2]])
+        context_parts = []
+        for s in sources[:2]:
+            evidence = extract_evidence_from_url(s['source'], fact)
+            final_text = evidence if evidence else s['text'] # بديل احتياطي لو فشل الكشط الرقمي
+            context_parts.append(f"[{label}: {s['source']}]\nالأدلة المستخرجة قطيعاً: {final_text}")
+        return "\n\n".join(context_parts)
 
     c1 = compile_context(tier1, f"موقع {entity_name}")
     c2 = compile_context(tier2, "وكالة أنباء موثوقة")
     c3 = compile_context(tier3, "الويب العام")
     
     prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ اليوم الحالي: {get_current_live_date()}. 
-الادعاء: "{fact}". موازنة الأدلة بناءً على المستندات المرفقة:
+الادعاء المراد محاكمته: "{fact}". موازنة الأدلة المقتطعة الصارمة بناءً على المستندات المرفقة:
 المستوى 1: {c1}
 المستوى 2: {c2}
 المستوى 3: {c3}
@@ -208,7 +239,7 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
 🛑 [تعليمات صارمة للرد]:
 يجب أن تبدأ ردك بوضع تصنيف قاطع وحيد للادعاء بين هذه الأقواس الثلاثة فقط:
 Either [VERDICT: TRUE] or [VERDICT: FALSE] or [VERDICT: PARTIAL]
-ثم بعد هذا الوسم، اكتب تفكيكك والتحليل الكامل والبديل الحقيقي باللغة العربية براحتك."""
+ثم بعد هذا الوسم، اكتب تفكيكك والتحليل الكامل والبديل الحقيقي باللغة العربية براحتك مستنداً على الأدلة فقط."""
     
     try:
         response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
@@ -244,7 +275,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
     else:
         tier1_sources, tier2_sources, tier3_sources = [], [], []
         
-        with st.spinner("🕵️ جاري تفكيك الادعاء وفق 3 طبقات ..."):
+        with st.spinner("🕵️ جاري سحب الأدلة الجنائية بدقة وفق 3 طبقات ..."):
             entity_name, expected_domain = extract_source_entity(fact_to_check)
             if entity_name and expected_domain:
                 tier1_sources = search_trusted_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
@@ -255,7 +286,6 @@ if st.button("بدء الفحص الجنائي الرقمي"):
             raw_tier3 = search_trusted_sources_serper(f"{fact_to_check} {datetime.now().year}", SERPER_API_KEY, num_results=3)
             tier3_sources = filter_and_rank_sources(fact_to_check, raw_tier3, top_k=2)
 
-        # 🔥 تم ضبط محاذاة كافة الأسطر التالية بدقة متناهية لمنع الـ IndentationError
         if not tier1_sources and not tier2_sources and not tier3_sources:
             st.warning("لم نتمكن من جلب أدلة حية كافية.")
         else:
@@ -310,4 +340,4 @@ if recent_items:
             st.markdown(f"**الحكم والتحليل:** {item['final_answer']}")
             st.caption(f"📅 تم التدقيق في: {item['created_at'][:10]}")
 else:
-    st.info("لا توجد تدقيقات سابقة مسجلة في الأرشيف حتى الآن.")
+    st.info("لا توجد تدقيقات سابقة مسجلة in الأرشيف حتى الآن.")
