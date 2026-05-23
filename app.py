@@ -241,7 +241,7 @@ Either [VERDICT: TRUE] or [VERDICT: FALSE] or [VERDICT: PARTIAL]
     
 try:
     response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
-    return response.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip()
 except Exception as e:
     return f"خطأ: {e}"
 
