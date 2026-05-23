@@ -10,6 +10,11 @@ from sentence_transformers import SentenceTransformer
 from numpy import dot
 from numpy.linalg import norm
 from supabase import create_client, Client
+from retrieval.extraction import download_and_extract
+from retrieval.evidence import (
+    split_sentences,
+    rank_sentences_by_similarity
+)
 
 # --- جلب المفاتيح البرمجية من بيئة التشغيل (Secrets) ---
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '').strip().strip('"').strip("'")
