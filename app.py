@@ -254,61 +254,78 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
 
 # 🛠️ [دالة جديدة]: هندسة وإنتاج ملف تقرير الـ PDF الاحترافي والآمن لغوياً برمجياً
 def generate_arabic_pdf(fact, verdict, analysis):
-    """إنتاج ملف PDF منسق صحفياً ومؤمن بالكامل لعرض الخطوط والكلمات العربية بدون تقطع أو تشوه بصري"""
+    """نسخة تجارية مطورة: تحميل وحقن خط عربي حقيقي لمنع ظهور المربعات السوداء أونلاين"""
     pdf_filename = "Fact_Check_Report.pdf"
     doc = SimpleDocTemplate(pdf_filename, pagesize=letter)
     story = []
     
-    # محاولة استخدام الخط الافتراضي المعتمد والمتاح في النظام للغة العربية
+    # ⬇️ خطوة سحرية أونلاين: تحميل خط عربي قياسي (Amiri أو Tahoma) مباشرة من الإنترنت وتخزينه مؤقتاً
+    font_url = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
+    font_path = "Amiri-Regular.ttf"
+    
     try:
-        # إذا كان لديك ملف خط معين يمكنك تفعيله هنا، وإلا سنعتمد على دمج معالجة النصوص وحقن الأنماط القياسية
-        pass
-    except:
-        pass
+        if not os.path.exists(font_path):
+            response = requests.get(font_url, timeout=10)
+            with open(font_path, "wb") as f:
+                f.write(response.content)
+        
+        # تسجيل الخط داخل مكتبة ReportLab باسم 'ArabicFont'
+        pdfmetrics.registerFont(TTFont('ArabicFont', font_path))
+        font_name = 'ArabicFont'
+    except Exception as font_error:
+        # خط دفاع احتياطي في حال فشل التحميل لأي سبب
+        font_name = 'Helvetica' 
+        st.sidebar.warning(f"تعذر تحميل الخط العربي، قد تظهر الحروف بشكل غير سليم: {font_error}")
 
     styles = getSampleStyleSheet()
     
     def process_ar_text(text):
-        """إعادة تشكيل وعكس النصوص البرمجية لتقرأها محركات PDF العربية بشكل سليم"""
+        """إعادة تشكيل وعكس النصوص العربية لتقرأها محركات PDF بشكل سليم ومن اليمين لليسار"""
         if not text: return ""
-        reshaped = arabic_reshaper.reshape(text)
+        # تنظيف النص من أي علامات أو وسوم قد تشوه الرسم
+        clean_text = text.replace("[VERDICT: TRUE]", "").replace("[VERDICT: FALSE]", "").replace("[VERDICT: PARTIAL]", "").replace("[VERDICT: INSUFFICIENT_EVIDENCE]", "")
+        reshaped = arabic_reshaper.reshape(clean_text)
         bidi_text = get_display(reshaped)
         return bidi_text
 
-    # تصميم رأس التقرير (Header)
+    # 🎨 إعداد أنماط النصوص مع إجبارها على استخدام الخط العربي المسجل وعكس الاتجاه
     title_style = ParagraphStyle(
         'TitleStyle',
         parent=styles['Heading1'],
-        fontSize=22,
-        leading=26,
+        fontName=font_name,
+        fontSize=20,
+        leading=24,
         textColor=colors.HexColor('#4A90E2'),
-        alignment=2 # مواءمة من اليمين
+        alignment=2 # يمين
     )
     
     body_style = ParagraphStyle(
         'BodyStyle',
         parent=styles['Normal'],
+        fontName=font_name,
         fontSize=12,
         leading=18,
         textColor=colors.HexColor('#222222'),
-        alignment=2
+        alignment=2 # يمين
     )
 
     verdict_style = ParagraphStyle(
         'VerdictStyle',
         parent=styles['Normal'],
+        fontName=font_name,
         fontSize=14,
         leading=20,
         textColor=colors.HexColor('#D9534F') if "خاطئ" in verdict else colors.HexColor('#5CB85C'),
-        alignment=2
+        alignment=2 # يمين
     )
 
+    # بناء هيكل المستند وتجهيز النصوص المعكوسة
     story.append(Paragraph(process_ar_text("🛡️ تقرير منصة المحقق الذكي لتدقيق الحقائق"), title_style))
     story.append(Spacer(1, 15))
     story.append(Paragraph(process_ar_text(f"📅 تاريخ إصدار التقرير: {get_current_live_date()}"), body_style))
     story.append(Spacer(1, 20))
     
-    # جدول محتويات الادعاء والحكم
+    # شبكة الجدول
     data = [
         [Paragraph(process_ar_text(fact), body_style), Paragraph(process_ar_text("الادعاء المراد فحصه"), body_style)],
         [Paragraph(process_ar_text(verdict), verdict_style), Paragraph(process_ar_text("الحكم والنتيجة"), body_style)]
@@ -319,7 +336,6 @@ def generate_arabic_pdf(fact, verdict, analysis):
         ('BACKGROUND', (1,0), (1,-1), colors.HexColor('#F5F5F5')),
         ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E0E0E0')),
         ('BOTTOMPADDING', (0,0), (-1,-1), 10),
         ('TOPPADDING', (0,0), (-1,-1), 10),
@@ -328,7 +344,7 @@ def generate_arabic_pdf(fact, verdict, analysis):
     story.append(t)
     story.append(Spacer(1, 20))
     
-    story.append(Paragraph(process_ar_text("📋 التفكيك والتحليل الاستقصائي الجنائي:"), body_style))
+    story.append(Paragraph(process_ar_text("📋 التفكيك والتحليل الاستقصائي الحركي:"), body_style))
     story.append(Spacer(1, 10))
     story.append(Paragraph(process_ar_text(analysis), body_style))
     
@@ -336,6 +352,7 @@ def generate_arabic_pdf(fact, verdict, analysis):
         doc.build(story)
         return pdf_filename
     except Exception as e:
+        st.error(f"خطأ أثناء بناء الـ PDF: {e}")
         return None
 
 # --- واجهة مستخدم Streamlit الرئيسية ---
