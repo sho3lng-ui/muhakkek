@@ -243,12 +243,12 @@ def display_share_buttons(fact, final_answer):
 # --- واجهة مستخدم Streamlit الرئيسية ---
 st.set_page_config(page_title="(إصدار تجريبي) المُحقق الذكي", layout="centered")
 apply_arabic_rtl()
-st.header("🛡️ المُحقق الذكي")
+st.header("🛡️ المُحقق الذكي للمعلومات والأخبار")
 st.caption(f"📅 تاريخ التحقق الحالي: {get_current_live_date()}")
 
 fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه:", "")
 
-if st.button("بدء الفحص الجنائي الرقمي"):
+if st.button("بدء الفحص الرقمي"):
     if not GROQ_API_KEY or not SERPER_API_KEY:
         st.error("🚨 خطأ في النظام: المفاتيح البرمجية غير متوفرة في بيئة التشغيل الحالية.")
     elif fact_to_check.strip() == "":
@@ -295,7 +295,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 with st.expander("🧠 مذكرات التحليل الداخلي للمحقق (Chain of Thought):"):
                     st.write(thinking)
             
-            st.subheader("⚖️ حكم منصة التحقق النهائي:")
+            st.subheader("⚖️ التحقق النهائي:")
             verdict_type = "خاطئ"
             clean_answer = final_answer
             
