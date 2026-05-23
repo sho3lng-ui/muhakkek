@@ -196,14 +196,38 @@ def parse_ai_response(full_text):
 def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
     model = get_active_model()
     if not model: return "خطأ في الاتصال بالنموذج"
-    
-    def compile_context(sources, label):
-        return "\n\n".join([f"[{label}: {s['source']}]\nالمحتوى: {scrape_full_content(s['source']) or s['text']}" for s in sources[:2]])
+    #---------------------------------------------#
+    def get_source_content(source, fact, embed_model):
+    """دالة مساعدة لمعالجة محتوى كل مصدر على حدة."""
+    try:
+        article = download_and_extract(source['source'])
+        sentences = split_sentences(article)
+        top_evidence = rank_sentences_by_similarity(
+            claim=fact,
+            sentences=sentences,
+            embed_model=embed_model,
+            top_k=3
+        )
+        return top_evidence if top_evidence else source['text']
+    except Exception:
+        return source['text']
 
-    c1 = compile_context(tier1, f"موقع {entity_name}")
-    c2 = compile_context(tier2, "وكالة أنباء موثوقة")
-    c3 = compile_context(tier3, "الويب العام")
+def compile_context(sources, label, fact, embed_model):
+    """دالة تجميع السياق بتنسيق مرتب."""
+    formatted_sources = []
     
+    for s in sources[:2]:
+        content = get_source_content(s, fact, embed_model)
+        formatted_text = f"[{label}: {s['source']}]\nالمحتوى: {content}"
+        formatted_sources.append(formatted_text)
+        
+    return "\n\n".join(formatted_sources)
+
+# طريقة الاستدعاء:
+c1 = compile_context(tier1, f"موقع {entity_name}", fact, embed_model)
+c2 = compile_context(tier2, "وكالة أنباء موثوقة", fact, embed_model)
+c3 = compile_context(tier3, "الويب العام", fact, embed_model)
+    #--------------------------------------------#
     prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ اليوم الحالي: {get_current_live_date()}. 
 الادعاء: "{fact}". موازنة الأدلة بناءً على المستندات المرفقة:
 المستوى 1: {c1}
