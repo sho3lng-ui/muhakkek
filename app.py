@@ -300,7 +300,7 @@ else:
 if 'free_checks_count' not in st.session_state:
     st.session_state.free_checks_count = 0
 
-st.header("🛡️ المُحقق الذكي")
+st.header("🛡️ 0.1 المُحقق الذكي")
 st.caption(f"📅 تاريخ التدقيق الحالي: {get_current_live_date()}")
 
 fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه:", "")
