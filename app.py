@@ -198,7 +198,7 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
     if not model: return "خطأ في الاتصال بالنموذج"
     #---------------------------------------------#
     def get_source_content(source, fact, embed_model):
-    """دالة مساعدة لمعالجة محتوى كل مصدر على حدة."""
+        """دالة مساعدة لمعالجة محتوى كل مصدر على حدة."""
     try:
         article = download_and_extract(source['source'])
         sentences = split_sentences(article)
