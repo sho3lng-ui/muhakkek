@@ -5,7 +5,7 @@ import os
 import json
 import urllib.parse
 import re
-from bs4 import BeautifulSoup
+import trafilatura  # 🔥 استيراد المكتبة الاحترافية الجديدة لاستخلاص المقالات
 from groq import Groq
 from sentence_transformers import SentenceTransformer
 from numpy import dot
@@ -123,7 +123,7 @@ def filter_and_rank_sources(fact, snippets, top_k=3):
         snippets[i]['confidence'] = base_conf
     return sorted(snippets, key=lambda x: x['confidence'], reverse=True)[:top_k]
 
-def search_trusted_sources_serper(query, api_key, num_results=3):
+def search_trusted_sources_sources_serper(query, api_key, num_results=3):
     if not api_key:
         return []
     url = "https://google.serper.dev/search"
@@ -142,27 +142,29 @@ def search_trusted_sources_serper(query, api_key, num_results=3):
     except:
         return []
 
-# 🔥 🔥 الطبقة الجديدة المحدثة: استخراج الأدلة الذكي بدلاً من كشط المقال الكامل 🔥 🔥
+# 🔥 🔥 التعديل الجديد: استبدال BeautifulSoup بـ trafilatura بالكامل لضمان محتوى نقي وخالٍ من الإعلانات 🔥 🔥
 def extract_evidence_from_url(target_url, fact, top_sentences=3):
-    """تقطيع المقال الكامل إلى جُمل، ومقارنتها دلالياً بالادعاء، وسحب الأدلة الأكثر صلة فقط"""
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    """جلب متن المقال الصافي باستخدام trafilatura، وتقطيعه لاستخراج الجمل الأدق صلة بالادعاء دلالياً"""
     try:
-        response = requests.get(target_url, headers=headers, timeout=5)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        text_elements = soup.find_all(['p', 'h1', 'h2', 'h3'])
-        full_text = " ".join([txt.get_text().strip() for txt in text_elements if txt.get_text().strip()])
+        # جلب الهيكل البرمجي للموقع
+        downloaded = trafilatura.fetch_url(target_url)
+        if not downloaded:
+            return ""
+            
+        # استخلاص النص الرئيسي للمقال فقط مع عزل الأزرار، القوائم الجانبية، الإعلانات، والـ footers
+        full_text = trafilatura.extract(downloaded, include_comments=False, include_tables=False)
         
-        if not full_text.strip() or not embed_model:
+        if not full_text or not full_text.strip() or not embed_model:
             return ""
         
-        # تقطيع النص إلى جُمل بناءً على الفواصل والنقاط العربية والأجنبية
+        # تقطيع المقال النظيف إلى جُمل منفصلة بناءً على الفواصل والنقاط
         sentences = re.split(r'[.\n।?!।،•●]', full_text)
-        sentences = [s.strip() for s in sentences if len(s.strip()) > 15] # فلترة العبارات القصيرة جداً كالإعلانات والأزرار
+        sentences = [s.strip() for s in sentences if len(s.strip()) > 15]
         
         if not sentences:
             return ""
             
-        # قياس التشابه الدلالي لكل جملة مع الادعاء الأصلي لفرز الأدلة
+        # قياس التشابه الدلالي بين جمل المقال النظيف والادعاء الأصلي
         fact_vector = embed_model.encode([fact])[0]
         sentence_vectors = embed_model.encode(sentences)
         
@@ -171,7 +173,7 @@ def extract_evidence_from_url(target_url, fact, top_sentences=3):
             score = float(cosine_similarity(fact_vector, sentence_vectors[idx]))
             scored_sentences.append((score, sentence))
             
-        # رص الجمل تنازلياً حسب دقة الدليل واقتطاع الأفضل
+        # ترتيب الجمل تنازلياً واقتطاع الأدلة الأقوى صلة بالادعاء
         top_evidences = sorted(scored_sentences, key=lambda x: x[0], reverse=True)[:top_sentences]
         evidence_text = " | ".join([ev[1] for ev in top_evidences])
         return evidence_text
@@ -217,13 +219,12 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
     model = get_active_model()
     if not model: return "خطأ في الاتصال بالنموذج"
     
-    # تحويل محاكمة الطبقات الثلاث لتبنى على الأدلة المستخرجة حصرياً (Evidence Based)
     def compile_context(sources, label):
         context_parts = []
         for s in sources[:2]:
             evidence = extract_evidence_from_url(s['source'], fact)
-            final_text = evidence if evidence else s['text'] # بديل احتياطي لو فشل الكشط الرقمي
-            context_parts.append(f"[{label}: {s['source']}]\nالأدلة المستخرجة قطيعاً: {final_text}")
+            final_text = evidence if evidence else s['text']
+            context_parts.append(f"[{label}: {s['source']}]\nالأدلة المستخرجة قطعياً: {final_text}")
         return "\n\n".join(context_parts)
 
     c1 = compile_context(tier1, f"موقع {entity_name}")
@@ -278,12 +279,12 @@ if st.button("بدء الفحص الجنائي الرقمي"):
         with st.spinner("🕵️ جاري سحب الأدلة الجنائية بدقة وفق 3 طبقات ..."):
             entity_name, expected_domain = extract_source_entity(fact_to_check)
             if entity_name and expected_domain:
-                tier1_sources = search_trusted_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
+                tier1_sources = search_trusted_sources_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
             
             sites_query = " OR ".join([f"site:{d}" for d in TRUSTED_DOMAINS[:4]])
-            tier2_sources = search_trusted_sources_serper(f"({sites_query}) {fact_to_check}", SERPER_API_KEY, num_results=2)
+            tier2_sources = search_trusted_sources_sources_serper(f"({sites_query}) {fact_to_check}", SERPER_API_KEY, num_results=2)
             
-            raw_tier3 = search_trusted_sources_serper(f"{fact_to_check} {datetime.now().year}", SERPER_API_KEY, num_results=3)
+            raw_tier3 = search_trusted_sources_sources_serper(f"{fact_to_check} {datetime.now().year}", SERPER_API_KEY, num_results=3)
             tier3_sources = filter_and_rank_sources(fact_to_check, raw_tier3, top_k=2)
 
         if not tier1_sources and not tier2_sources and not tier3_sources:
@@ -340,4 +341,4 @@ if recent_items:
             st.markdown(f"**الحكم والتحليل:** {item['final_answer']}")
             st.caption(f"📅 تم التدقيق في: {item['created_at'][:10]}")
 else:
-    st.info("لا توجد تدقيقات سابقة مسجلة in الأرشيف حتى الآن.")
+    st.info("لا توجد تدقيقات سابقة مسجلة في الأرشيف حتى الآن.")
