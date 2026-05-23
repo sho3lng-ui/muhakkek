@@ -70,9 +70,7 @@ def apply_arabic_rtl():
 TRUSTED_DOMAINS = [
     "bbc.com", "reuters.com", "cnn.com", "skynewsarabia.com", 
     "aljazeera.net", "france24.com", "asharq.com", "alarabiya.net",
-    "dw.com", "un.org", "who.int", "reutersagency.com", "skynewsarabia.com", "youm7.com", "alarabiya.net", 
-    "mena.org.eg", "www.wam.ae", "spa.gov.sa", "elwatannews.com", "dostor.org", "cairo24.com",
-    "alqaheranews.net", "almasryalyoum.com", "shorouknews.com", "qna.org.qa", 
+    "dw.com", "un.org", "who.int", "reutersagency.com",
 ]
 
 # --- تهيئة المكونات وقاعدة البيانات في الكاش لسرعة الأداء ---
