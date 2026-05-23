@@ -30,7 +30,8 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().strip('"').strip("'")
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '').strip().strip('"').strip("'")
 
 # كود تفعيل النسخة المدفوعة (يمكنك تغييره لأي كود سري تريده)
-VALID_PRO_KEY = "HETAT_PRO_2026"
+# جلب كود الترقية بأمان من البيئة السحابية المخفية، مع وضع قيمة احتياطية في حال لم يتم ضبطه بعد
+VALID_PRO_KEY = os.environ.get('VALID_PRO_KEY', 'HETAT_PRO_DEFAULT_2026').strip()
 
 def apply_commercial_flat_design():
     st.markdown(
