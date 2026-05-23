@@ -1,8 +1,10 @@
 streamlit
 requests
-numpy
-sentence-transformers
-beautifulsoup4
-groq
-supabase>=2.4.0
 trafilatura
+groq
+sentence-transformers
+numpy
+supabase
+reportlab
+arabic-reshaper
+python-bidi
