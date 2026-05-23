@@ -12,23 +12,20 @@ from numpy.linalg import norm
 from supabase import create_client, Client
 
 # --- جلب المفاتيح البرمجية من بيئة التشغيل (Secrets) ---
-GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
-SERPER_API_KEY = os.environ.get('SERPER_API_KEY')
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '').strip().strip('"').strip("'")
+SERPER_API_KEY = os.environ.get('SERPER_API_KEY', '').strip().strip('"').strip("'")
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().strip('"').strip("'")
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '').strip().strip('"').strip("'")
 
 def apply_arabic_rtl():
     """حقن كود CSS لقلب واجهة التطبيق بالكامل لتصبح من اليمين إلى اليسار وتغيير الخط ليكون مريحاً للعين"""
     st.markdown(
         """
         <style>
-        /* إجبار التطبيق بالكامل على الاتجاه من اليمين إلى اليسار */
         .stApp {
             direction: rtl;
             text-align: right;
         }
-        
-        /* ضبط صناديق النصوص ومدخلات المستخدم لتكون محاذاتها يميناً */
         div[data-baseweb="textarea"] textarea {
             direction: rtl !important;
             text-align: right !important;
@@ -37,26 +34,18 @@ def apply_arabic_rtl():
             direction: rtl !important;
             text-align: right !important;
         }
-        
-        /* ضبط نصوص قوقل والمحتويات المقتبسة لتلتزم باليمين */
         .stMarkdown div p {
             direction: rtl;
             text-align: right;
         }
-        
-        /* تحسين شكل وحواف صناديق التنبيه (الأخضر والأحمر والأصفر) */
         .stAlert {
             direction: rtl;
             text-align: right;
         }
-        
-        /* محاذاة العناوين الرئيسية والفرعية */
         h1, h2, h3, h4, h5, h6, p, span {
             text-align: right !important;
             direction: rtl !important;
         }
-        
-        /* تعديل اتجاه صناديق الأرشيف القابلة للتوسيع (Expander) */
         .st-emotion-cache-p6w706 {
             direction: rtl !important;
             text-align: right !important;
@@ -66,11 +55,13 @@ def apply_arabic_rtl():
         unsafe_allow_html=True
     )
 
-# قائمة المصادر الموثوقة (Tier 2)
+# قائمة المصادر الموثوقة المحدثة
 TRUSTED_DOMAINS = [
     "bbc.com", "reuters.com", "cnn.com", "skynewsarabia.com", 
     "aljazeera.net", "france24.com", "asharq.com", "alarabiya.net",
-    "dw.com", "un.org", "who.int", "reutersagency.com",
+    "dw.com", "un.org", "who.int", "reutersagency.com", "youm7.com", 
+    "mena.org.eg", "www.wam.ae", "spa.gov.sa", "elwatannews.com", "dostor.org", "cairo24.com",
+    "alqaheranews.net", "almasryalyoum.com", "shorouknews.com", "qna.org.qa"
 ]
 
 # --- تهيئة المكونات وقاعدة البيانات في الكاش لسرعة الأداء ---
@@ -79,7 +70,6 @@ def init_services():
     groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
     embed_model = SentenceTransformer('all-MiniLM-L6-v2')
     
-    # تهيئة عميل Supabase
     supabase_client = None
     if SUPABASE_URL and SUPABASE_KEY:
         try:
@@ -91,24 +81,19 @@ def init_services():
 
 groq_client, embed_model, supabase_client = init_services()
 
-# --- دالات الحفظ والقراءة من قاعدة البيانات المحدثة لكشف الأخطاء ---
+# --- دالات الحفظ والقراءة من قاعدة البيانات ---
 def save_check_to_database(fact, verdict, final_answer):
-    """حفظ التدقيق الجديد في Supabase مع طباعة الخطأ إن وجد"""
     if supabase_client:
         try:
-            data, count = supabase_client.table("fact_checks").insert({
+            supabase_client.table("fact_checks").insert({
                 "fact": fact,
                 "verdict": verdict,
                 "final_answer": final_answer
             }).execute()
-            # لإنعاش الصفحة فوراً بعد الحفظ لتظهر النتيجة في الأرشيف
-            #st.rerun() 
         except Exception as e:
-            # هذا السطر سيطبع لك السبب الحقيقي للخطأ في الـ Manage App / Logs الخاصة بـ Streamlit
             st.sidebar.error(f"فشل حفظ البيانات: {e}")
 
 def get_recent_checks(limit=5):
-    """جلب آخر التدقيقات من Supabase"""
     if supabase_client:
         try:
             response = supabase_client.table("fact_checks").select("*").order("created_at", desc=True).limit(limit).execute()
@@ -163,7 +148,7 @@ def scrape_full_content(target_url):
         soup = BeautifulSoup(response.text, 'html.parser')
         text_elements = soup.find_all(['p', 'h1', 'h2', 'h3'])
         full_text = " ".join([txt.get_text().strip() for txt in text_elements if txt.get_text().strip()])
-        return full_text[:1200]  # حمية التوكنز الآمنة لمنع خطأ 413
+        return full_text[:1200]
     except:
         return ""
 
@@ -178,7 +163,8 @@ def get_current_live_date():
 def get_active_model():
     try:
         available_models = [m.id for m in groq_client.models.list().data]
-        for preferred in ["openai/gpt-oss-120b", "qwen", "llama-3.3"]:
+        # 🔥 تم إصلاح هذا السطر وحذف موديل أوبن إيه آي غير الموجود في جروك
+        for preferred in ["qwen", "llama-3.3", "llama3-8b"]:
             match = next((m for m in available_models if preferred in m.lower() and "preview" not in m.lower()), None)
             if match: return match
         return available_models[0] if available_models else None
@@ -246,7 +232,6 @@ def display_share_buttons(fact, final_answer):
 
 # --- واجهة مستخدم Streamlit الرئيسية ---
 st.set_page_config(page_title="(إصدار تجريبي) المُحقق الذكي", layout="centered")
-# 🔥 تفعيل التصميم العربي المندمج فوراً عند فتح التطبيق
 apply_arabic_rtl()
 st.header("🛡️ المُحقق الذكي")
 st.caption(f"📅 تاريخ التحقق: {get_current_live_date()}")
@@ -270,6 +255,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
             raw_tier3 = search_trusted_sources_serper(f"{fact_to_check} {datetime.now().year}", SERPER_API_KEY, num_results=3)
             tier3_sources = filter_and_rank_sources(fact_to_check, raw_tier3, top_k=2)
 
+        # 🔥 تم ضبط محاذاة كافة الأسطر التالية بدقة متناهية لمنع الـ IndentationError
         if not tier1_sources and not tier2_sources and not tier3_sources:
             st.warning("لم نتمكن من جلب أدلة حية كافية.")
         else:
@@ -281,8 +267,6 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                     st.write(thinking)
             
             st.subheader("⚖️ حكم منصة التحقق النهائي:")
-            
-            # استخراج الحكم الصارم من الوسم وتحديد اللون بدقة 100%
             verdict_type = "خاطئ"
             clean_answer = final_answer
             
@@ -299,7 +283,6 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 clean_answer = final_answer.replace("[VERDICT: FALSE]", "").strip()
                 st.error(clean_answer)
             else:
-                # حل احتياطي لو لم يلتزم الموديل بالوسم (فحص تقليدي)
                 if "جزئي" in final_answer:
                     verdict_type = "جزئيًا صحيح"
                     st.warning(final_answer)
@@ -309,10 +292,7 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 else:
                     st.error(final_answer)
             
-            # حفظ التحقيق الحالي بدقة التصنيف الجديدة في قاعدة البيانات
             save_check_to_database(fact_to_check, verdict_type, clean_answer)
-            
-            # عرض أزرار المشاركة والنسخ بالنص النظيف
             display_share_buttons(fact_to_check, clean_answer)
             st.markdown(" ")
             st.code(f"الادعاء: {fact_to_check}\nالحكم النهائي: {clean_answer}", language="text")
@@ -324,7 +304,6 @@ recent_items = get_recent_checks()
 
 if recent_items:
     for item in recent_items:
-        # تحديد اللون الأيقوني حسب الحكم المخزن في Supabase
         badge = "🔴" if "خاطئ" in item['verdict'] else ("🟡" if "جزئي" in item['verdict'] else "🟢")
         with st.expander(f"{badge} {item['fact'][:70]}..."):
             st.markdown(f"**الادعاء الأصلي:** {item['fact']}")
