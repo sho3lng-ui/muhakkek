@@ -239,11 +239,11 @@ prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ
 Either [VERDICT: TRUE] or [VERDICT: FALSE] or [VERDICT: PARTIAL]
 ثم بعد هذا الوسم، اكتب تفكيكك والتحليل الكامل والبديل الحقيقي باللغة العربية براحتك."""
     
-    try:
-        response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"خطأ: {e}"
+try:
+    response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
+    return response.choices[0].message.content.strip()
+except Exception as e:
+    return f"خطأ: {e}"
 
 def display_share_buttons(fact, final_answer):
     st.markdown("---")
