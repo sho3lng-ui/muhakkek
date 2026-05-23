@@ -10,11 +10,6 @@ from sentence_transformers import SentenceTransformer
 from numpy import dot
 from numpy.linalg import norm
 from supabase import create_client, Client
-from retrieval.extraction import download_and_extract
-from retrieval.evidence import (
-    split_sentences,
-    rank_sentences_by_similarity
-)
 
 # --- جلب المفاتيح البرمجية من بيئة التشغيل (Secrets) ---
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '').strip().strip('"').strip("'")
@@ -193,43 +188,17 @@ def parse_ai_response(full_text):
         return parts[0].replace("<think>", "").strip(), parts[1].strip()
     return None, full_text
 
-def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name, embed_model, groq_client):
+def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
     model = get_active_model()
-    if not model:
-        return "خطأ في الاتصال بالنموذج"
+    if not model: return "خطأ في الاتصال بالنموذج"
+    
+    def compile_context(sources, label):
+        return "\n\n".join([f"[{label}: {s['source']}]\nالمحتوى: {scrape_full_content(s['source']) or s['text']}" for s in sources[:2]])
 
-    # 1. الدالة المساعدة لمعالجة المصادر
-    def get_source_content(source, fact, embed_model):
-        """دالة مساعدة لمعالجة محتوى كل مصدر على حدة."""
-        try:
-            article = download_and_extract(source['source'])
-            sentences = split_sentences(article)
-            top_evidence = rank_sentences_by_similarity(
-                claim=fact,
-                sentences=sentences,
-                embed_model=embed_model,
-                top_k=3
-            )
-            return top_evidence if top_evidence else source['text']
-        except Exception:
-            return source['text']
-
-    # 2. دالة تجميع السياق
-    def compile_context(sources, label, fact, embed_model):
-        """دالة تجميع السياق بتنسيق مرتب."""
-        formatted_sources = []
-        for s in sources[:2]:
-            content = get_source_content(s, fact, embed_model)
-            formatted_text = f"[{label}: {s['source']}]\nالمحتوى: {content}"
-            formatted_sources.append(formatted_text)
-        return "\n\n".join(formatted_sources)
-
-    # 3. إعداد السياق
-    c1 = compile_context(tier1, f"موقع {entity_name}", fact, embed_model)
-    c2 = compile_context(tier2, "وكالة أنباء موثوقة", fact, embed_model)
-    c3 = compile_context(tier3, "الويب العام", fact, embed_model)
-
-    # 4. بناء الـ Prompt
+    c1 = compile_context(tier1, f"موقع {entity_name}")
+    c2 = compile_context(tier2, "وكالة أنباء موثوقة")
+    c3 = compile_context(tier3, "الويب العام")
+    
     prompt = f"""أنت رئيس تحرير ومحقق صحفي خبير. تاريخ اليوم الحالي: {get_current_live_date()}. 
 الادعاء: "{fact}". موازنة الأدلة بناءً على المستندات المرفقة:
 المستوى 1: {c1}
@@ -239,15 +208,10 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name, embed_
 🛑 [تعليمات صارمة للرد]:
 يجب أن تبدأ ردك بوضع تصنيف قاطع وحيد للادعاء بين هذه الأقواس الثلاثة فقط:
 Either [VERDICT: TRUE] or [VERDICT: FALSE] or [VERDICT: PARTIAL]
-ثم بعد هذا الوسم، اكتب تفكيكك والتحليل الكامل والبديل الحقيقي باللغة العربية."""
-
-    # 5. استدعاء النموذج
+ثم بعد هذا الوسم، اكتب تفكيكك والتحليل الكامل والبديل الحقيقي باللغة العربية براحتك."""
+    
     try:
-        response = groq_client.chat.completions.create(
-            model=model, 
-            messages=[{"role": "user", "content": prompt}], 
-            temperature=0.1
-        )
+        response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1)
         return response.choices[0].message.content.strip()
     except Exception as e:
         return f"خطأ: {e}"
