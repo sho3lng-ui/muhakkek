@@ -29,20 +29,21 @@ SERPER_API_KEY = os.environ.get('SERPER_API_KEY', '').strip().strip('"').strip("
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().strip('"').strip("'")
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '').strip().strip('"').strip("'")
 
-# كود تفعيل النسخة المدفوعة (يمكنك تغييره لأي كود سري تريده)
-# جلب كود الترقية بأمان من البيئة السحابية المخفية، مع وضع قيمة احتياطية في حال لم يتم ضبطه بعد
+# جلب كود الترقية بأمان من البيئة السحابية المخفية
 VALID_PRO_KEY = os.environ.get('VALID_PRO_KEY', 'HETAT_PRO_DEFAULT_2026').strip()
 
 def apply_commercial_flat_design():
     st.markdown(
         """
         <style>
+        /* إعدادات الاتجاهات والنصوص العربية */
         .stApp { direction: rtl; text-align: right; }
         div[data-baseweb="textarea"] textarea { direction: rtl !important; text-align: right !important; }
         div[data-baseweb="input"] input { direction: rtl !important; text-align: right !important; }
         .stMarkdown div p { direction: rtl; text-align: right; font-size: 1.05rem; }
         h1, h2, h3, h4, h5, h6 { text-align: right !important; direction: rtl !important; font-family: 'Segoe UI', Arial, sans-serif; }
         
+        /* تصميم أزرار Flat 2.0 */
         .stButton>button {
             width: 100%;
             border-radius: 8px;
@@ -54,7 +55,13 @@ def apply_commercial_flat_design():
             box-shadow: none;
         }
         .stButton>button:hover { background-color: #357ABD; }
-                /* إخفاء تام لأي محتوى هارب من السايدبار عندما يكون مغلقاً */
+        
+        /* منع النصوص في الشريط الجانبي من الالتفاف رأسياً عند تضييق المساحة */
+        section[data-testid="stSidebar"] * {
+            white-space: nowrap !important;
+        }
+        
+        /* إخفاء تام لأي محتوى هارب من السايدبار عندما يكون مغلقاً */
         section[data-testid="stSidebar"][aria-expanded="false"] {
             display: none !important;
             visibility: hidden !important;
@@ -129,7 +136,8 @@ def search_trusted_sources_sources_serper(query, api_key, num_results=4):
         for item in results.get("organic", []):
             snippet_text = item.get("snippet")
             link = item.get("link")
-            if snippet_text: snippets.append({"text": snippet_text, "source": link})
+            title = item.get("title", "رابط مصدر")
+            if snippet_text: snippets.append({"text": snippet_text, "source": link, "title": title})
         return snippets
     except: return []
 
@@ -184,7 +192,7 @@ def get_active_model():
 def extract_source_entity(fact):
     model = get_active_model()
     if not model or not groq_client or not fact: return None, None
-    prompt = f'تحلل النص واستخرج منه أي جهة نُسب إليها الكلام. أعد الإجابة بصيغة JSON فقط: {{"has_entity": true, "entity_name": "الاسم", "expected_domain": "who.int"}}. النص: "{fact}"'
+    prompt = f'تحلل النص واستخرج منه أي جهة أو مؤسسة أو مسؤول نُسب إليها الكلام. أعد الإجابة بصيغة JSON فقط: {{"has_entity": true, "entity_name": "الاسم", "expected_domain": "who.int"}}. النص: "{fact}"'
     try:
         response = groq_client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0.0)
         data = json.loads(response.choices[0].message.content.strip().replace("```json", "").replace("```", ""))
@@ -238,7 +246,8 @@ def evaluate_fact_with_multi_tier(fact, tier1, tier2, tier3, entity_name):
         return response.choices[0].message.content.strip()
     except Exception as e: return f"خطأ أثناء معالجة الحكم: {e}"
 
-def generate_arabic_pdf(fact, verdict, analysis):
+# 🛠️ [تعديل دالة الـ PDF]: دعم طباعة المراجع والروابط بداخل التقرير لمنع المربعات وتقديم مستند موثق
+def generate_arabic_pdf(fact, verdict, analysis, sources_list):
     pdf_filename = "Fact_Check_Report.pdf"
     doc = SimpleDocTemplate(pdf_filename, pagesize=letter)
     story = []
@@ -258,9 +267,10 @@ def generate_arabic_pdf(fact, verdict, analysis):
         reshaped = arabic_reshaper.reshape(text)
         return get_display(reshaped)
 
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontName=font_name, fontSize=20, leading=24, textColor=colors.HexColor('#4A90E2'), alignment=2)
-    body_style = ParagraphStyle('BodyStyle', parent=styles['Normal'], fontName=font_name, fontSize=12, leading=18, textColor=colors.HexColor('#222222'), alignment=2)
-    verdict_style = ParagraphStyle('VerdictStyle', parent=styles['Normal'], fontName=font_name, fontSize=14, leading=20, textColor=colors.HexColor('#5CB85C'), alignment=2)
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontName=font_name, fontSize=18, leading=22, textColor=colors.HexColor('#4A90E2'), alignment=2)
+    body_style = ParagraphStyle('BodyStyle', parent=styles['Normal'], fontName=font_name, fontSize=11, leading=16, textColor=colors.HexColor('#222222'), alignment=2)
+    verdict_style = ParagraphStyle('VerdictStyle', parent=styles['Normal'], fontName=font_name, fontSize=13, leading=18, textColor=colors.HexColor('#5CB85C'), alignment=2)
+    link_style = ParagraphStyle('LinkStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=12, textColor=colors.HexColor('#1B365D'), alignment=0) # روابط الإنجليزية يسار
 
     story.append(Paragraph(process_ar_text("🛡️ تقرير منصة المحقق الذكي لتدقيق الحقائق"), title_style))
     story.append(Spacer(1, 15))
@@ -271,36 +281,47 @@ def generate_arabic_pdf(fact, verdict, analysis):
     t = Table(data, colWidths=[350, 150])
     t.setStyle(TableStyle([('BACKGROUND', (1,0), (1,-1), colors.HexColor('#F5F5F5')), ('ALIGN', (0,0), (-1,-1), 'RIGHT'), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E0E0E0')), ('BOTTOMPADDING', (0,0), (-1,-1), 8), ('TOPPADDING', (0,0), (-1,-1), 8)]))
     story.append(t)
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 15))
+    
+    # التحليل
+    story.append(Paragraph(process_ar_text("📋 التفكيك والتحليل الاستقصائي:"), body_style))
+    story.append(Spacer(1, 5))
     story.append(Paragraph(process_ar_text(analysis), body_style))
+    story.append(Spacer(1, 15))
+    
+    # المراجع والروابط داخل الـ PDF
+    if sources_list:
+        story.append(Paragraph(process_ar_text("🔗 الروابط والمصادر الاستنادية (Sources):"), body_style))
+        story.append(Spacer(1, 5))
+        for idx, src in enumerate(sources_list, 1):
+            src_text = f"[{idx}] {src['title']} "
+            story.append(Paragraph(process_ar_text(src_text), body_style))
+            story.append(Paragraph(src['source'], link_style))
+            story.append(Spacer(1, 4))
+            
     try:
         doc.build(story)
         return pdf_filename
     except: return None
 
-# --- واجهة المستخدم والتحكم في نموذج العمل (Monetization UI) ---
-st.set_page_config(page_title="المُحقق الذكي - ونموذج العمل تجاري", layout="centered")
+# --- واجهة المستخدم الرئيسية ---
+st.set_page_config(page_title="المُحقق الذكي - بث المصادر حياً", layout="centered")
 apply_commercial_flat_design()
 
-# 👑 إعداد الشريط الجانبي التجاري
 st.sidebar.title("🔑 نظام الاشتراكات ورخصة الاستخدام")
 license_key = st.sidebar.text_input("أدخل مفتاح الترقية لنسخة Pro:", "", type="password")
 
-# تفعيل حالة الحساب بناءً على المفتاح المكتوب
 if license_key == VALID_PRO_KEY:
     is_pro = True
     st.sidebar.success("👑 حسابك الآن: ترخيص احترافي (Pro Account)")
-    st.sidebar.markdown("**الميزات النشطة:**\n* فحص مصفوفي عالمي غير محدود\n* مسح الوكالات العالمية الذكي\n* استخراج تقارير PDF الموثقة مجاناً")
 else:
     is_pro = False
     st.sidebar.info("👤 حسابك الحالي: الباقة المجانية")
-    st.sidebar.warning("تريد ميزات التحقيق الاحترافي؟ تواصل مع الإدارة للحصول على مفتاح الترقية الحصري.")
 
-# تهيئة عداد الفحوصات اليومية للحساب المجاني في ذاكرة الجلسة
 if 'free_checks_count' not in st.session_state:
     st.session_state.free_checks_count = 0
 
-st.header("🛡️ المُحقق الذكي 0.1")
+st.header("🛡️ المُحقق الذكي")
 st.caption(f"📅 تاريخ التدقيق الحالي: {get_current_live_date()}")
 
 fact_to_check = st.text_area("أدخل المعلومة أو الخبر المراد فحصه:", "")
@@ -310,32 +331,50 @@ if st.button("بدء الفحص الجنائي الرقمي"):
         st.error("🚨 خطأ في النظام: المفاتيح البرمجية (API Keys) غير متوفرة في بيئة التشغيل.")
     elif fact_to_check.strip() == "":
         st.warning("الرجاء كتابة نص أو ادعاء أولاً.")
-    # 🔒 شرط تقييد الحساب المجاني
     elif not is_pro and st.session_state.free_checks_count >= 3:
-        st.error("🚫 عذراً! لقد استهلكت حدك المجاني اليومي بالكامل (3 فحوصات). يرجى الترقية إلى الباقة الاحترافية (Pro) للاستمتاع بفحص غير محدود.")
+        st.error("🚫 عذراً! لقد استهلكت حدك المجاني اليومي بالكامل (3 فحوصات).")
     else:
-        status_box = st.empty()
+        status_container = st.empty()
+        live_logs = []
         
-        # 👑 الحساب المدفوع يستمتع بالبحث المصفوفي المعقد
+        def update_log(message):
+            live_logs.append(message)
+            status_container.markdown("\n".join(live_logs))
+            time.sleep(0.3)
+            
+        update_log("🧠 **جاري تشغيل المعالج اللغوي واستخراج الكيانات والجهات المذكورة...**")
+        entity_name, expected_domain = extract_source_entity(fact_to_check)
+        if entity_name:
+            update_log(f"🎯 **تم تحديد جهة النسبة المستهدفة:** `{entity_name}` | النطاق المتوقع: `{expected_domain}`")
+        else:
+            update_log("🔍 **لم يتم رصد نسبة صريحة لمؤسسة؛ جاري الانتقال للويب العام مباشرة...**")
+
         if is_pro:
-            status_box.markdown("🔍 **[ميزة Pro]: جاري تشغيل محركات البحث دلالياً وتوسيع الاستعلام بلغات متعددة...**")
+            update_log("⚙️ **[ميزة Pro]: جاري استخدام الـ Query Expansion لتوليد مصفوفة بحث متعددة اللغات...**")
             optimized_queries = generate_optimized_search_queries(fact_to_check)
         else:
-            status_box.markdown("🔍 **[باقة مجانية]: جاري البحث العادي في الويب...**")
-            optimized_queries = [fact_to_check] # البحث يقتصر على نص الادعاء الحرفي فقط توفيراً للتكلفة
-            
-        time.sleep(0.5)
-        status_box.markdown("⏳ **جاري فحص وتتبع وكالات الأنباء... تم العثور على مستندات حية.**")
-        
-        entity_name, expected_domain = extract_source_entity(fact_to_check)
+            optimized_queries = [fact_to_check]
+            update_log("🔍 **[باقة مجانية]: جاري تهيئة البحث باستخدام النص الحرفي للادعاء...**")
+
+        # شبكات جمع المصادر والروابط المستند عليها
         tier1_sources, tier2_sources, tier3_sources = [], [], []
+        all_discovered_sources = [] # 🌟 مصفوفة لتجميع كافة الروابط المستند عليها حياً
         
         if entity_name and expected_domain:
+            update_log(f"🌐 **جاري مسح الأرشيف الرسمي لنطاق:** `{expected_domain}`...")
             tier1_sources = search_trusted_sources_sources_serper(f"site:{expected_domain} {fact_to_check}", SERPER_API_KEY, num_results=2)
-        
+            for s in tier1_sources:
+                update_log(f"📌 **عثرت في المصادر الرسمية على مقال بعنوان:** _\"{s['title']}\"_*")
+                all_discovered_sources.append(s)
+
+        update_log("📰 **جاري مسح غرف الأخبار والوكالات العالمية الموثوقة (BBC, Reuters, Al Jazeera, etc.)...**")
         sites_query = " OR ".join([f"site:{d}" for d in TRUSTED_DOMAINS[:6]])
         tier2_sources = search_trusted_sources_sources_serper(f"({sites_query}) {fact_to_check}", SERPER_API_KEY, num_results=3)
-        
+        for s in tier2_sources:
+            update_log(f"🌐 **تم العثور على مستند في وكالة أنباء بعنوان:** _\"{s['title']}\"_*")
+            all_discovered_sources.append(s)
+
+        update_log("🚀 **جاري تفعيل الفحص الموسع وشبكة الفلترة الذكية للويب العام...**")
         raw_tier3 = []
         for q in optimized_queries:
             search_results = search_trusted_sources_sources_serper(q, SERPER_API_KEY, num_results=2 if is_pro else 1)
@@ -349,23 +388,25 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                 unique_tier3.append(item)
                 
         tier3_sources = filter_and_rank_sources(fact_to_check, unique_tier3, top_k=4 if is_pro else 2)
-        time.sleep(0.5)
-        
-        status_box.markdown("🧠 **جاري صياغة الحكم النهائي والمطابقة الجنائية...**")
+        for s in tier3_sources:
+            update_log(f"🔗 **رصد نتيجة ويب وثيقة الصلة:** _\"{s['title']}\"_*")
+            all_discovered_sources.append(s)
+
+        update_log("🧠 **جاري الآن مقارنة المستندات والمطابقة الجنائية وصياغة الحكم النهائي...**")
         
         if not tier1_sources and not tier2_sources and not tier3_sources:
-            status_box.empty()
+            status_container.empty()
             st.error("⚠️ [حكم المنصة]: غير كافي للحكم (INSUFFICIENT EVIDENCE)")
         else:
             evaluation_result = evaluate_fact_with_multi_tier(fact_to_check, tier1_sources, tier2_sources, tier3_sources, entity_name)
             thinking, final_answer = parse_ai_response(evaluation_result)
-            status_box.empty()
+            status_container.empty()
             
-            if thinking and is_pro: # مذكرات التحليل ميزة حصرية للـ Pro
+            if thinking and is_pro:
                 with st.expander("🧠 مذكرات التحليل الداخلي للمحقق (Chain of Thought) [Pro Only]:"):
                     st.write(thinking)
             
-            st.subheader("⚖️ الحكم النهائي:")
+            st.subheader("⚖️ حكم منصة التحقق النهائي:")
             verdict_type = "خاطئ"
             clean_answer = final_answer
             
@@ -390,9 +431,26 @@ if st.button("بدء الفحص الجنائي الرقمي"):
             
             save_check_to_database(fact_to_check, verdict_type, clean_answer)
             
-            # 🔒 قفل الـ PDF التجاري
+            # 🌟 [التحديث الجوهري]: استعراض المصادر والروابط المستند عليها للمستخدم في الواجهة مباشرة
+            if all_discovered_sources:
+                st.markdown("---")
+                st.subheader("🔗 الروابط والمصادر التي استند عليها التحقيق:")
+                # إزالة أي روابط مكررة ناتجة عن الفحص متعدد المستويات
+                unique_final_sources = []
+                seen_links = set()
+                for src in all_discovered_sources:
+                    if src['source'] not in seen_links:
+                        seen_links.add(src['source'])
+                        unique_final_sources.append(src)
+                
+                # عرض الروابط كـ أزرار أو نصوص تشعبية أنيقة
+                for idx, src in enumerate(unique_final_sources, 1):
+                    st.markdown(f"**[{idx}] [{src['title']}]({src['source']})**")
+                    st.caption(f"المصدر الأصلي: {src['source']}")
+            
             if is_pro:
-                pdf_path = generate_arabic_pdf(fact_to_check, verdict_type, clean_answer)
+                # تمرير الروابط لدالة الـ PDF ليتم كتابتها بداخل الملف المحمل أيضاً
+                pdf_path = generate_arabic_pdf(fact_to_check, verdict_type, clean_answer, unique_final_sources)
                 if pdf_path and os.path.exists(pdf_path):
                     with open(pdf_path, "rb") as pdf_file:
                         st.download_button(
@@ -402,13 +460,10 @@ if st.button("بدء الفحص الجنائي الرقمي"):
                             mime="application/pdf"
                         )
             else:
-                # زيادة عداد الفحوصات المجانية عند انتهاء الفحص بنجاح
                 st.session_state.free_checks_count += 1
                 st.sidebar.metric(label="الفحوصات المجانية المستهلكة اليوم", value=f"{st.session_state.free_checks_count} / 3")
-                
-                # عرض الزر معطلاً أو توجيهي للترقية
                 st.markdown("---")
-                st.info("💡 ميزة تحميل تقارير الـ PDF مخصصة لأعضاء الباقة الاحترافية (Pro). أدخل كود الترقية في الشريط الجانبي لتفعيلها فوراً.")
+                st.info("💡 ميزة تحميل تقارير الـ PDF مخصصة لأعضاء الباقة الاحترافية (Pro).")
             
             st.markdown(" ")
             st.code(f"الادعاء: {fact_to_check}\nالحكم النهائي: {clean_answer}", language="text")
@@ -424,5 +479,3 @@ if recent_items:
         with st.expander(f"{badge} {item['fact'][:70]}..."):
             st.markdown(f"**الادعاء الأصلي:** {item['fact']}")
             st.markdown(f"**الحكم والتحليل:** {item['final_answer']}")
-else:
-    st.info("لا توجد تدقيقات سابقة مسجلة في الأرشيف حتى الآن.")
